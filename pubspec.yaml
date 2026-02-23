@@ -1,0 +1,40 @@
+name: board_go
+description: Local multiplayer board game platform — iPad as server/board, phones as player nodes.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Embedded WebSocket server (GameBoard)
+  shelf: ^1.4.0
+  shelf_web_socket: ^2.0.0
+  shelf_router: ^1.1.0
+  web_socket_channel: ^3.0.0
+
+  # Device discovery & connection
+  multicast_dns: ^0.3.2
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.0.0
+
+  # Game pack execution
+  webview_flutter: ^4.4.0
+
+  # State management
+  riverpod: ^2.5.0
+
+  # Local persistence
+  sqflite: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  test: ^1.24.0
+
+flutter:
+  uses-material-design: true

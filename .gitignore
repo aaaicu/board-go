@@ -1,0 +1,33 @@
+
+# FVM Version Cache
+.fvm/
+
+# Flutter & Dart Build Artifacts
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+dist/
+*.apk
+*.ipa
+*.aab
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# Environment
+.env
+.env.local
+
+# Miscellaneous
+*.swp
+*.swo
+*~
+.claude/
