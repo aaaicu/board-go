@@ -224,7 +224,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final connectionData = '${_localIp ?? 'localhost'}:${handle.port}';
+    final displayIp = _localIp ?? 'localhost';
+    final connectionData = '$displayIp:${handle.port}';
+    final qrData = 'ws://$displayIp:${handle.port}/ws';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -264,7 +266,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 16),
-          QrCodeWidget(connectionData: connectionData),
+          QrCodeWidget(connectionData: qrData, displayText: connectionData),
         ],
       ),
     );

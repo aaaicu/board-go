@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:multicast_dns/multicast_dns.dart';
 
 /// A discovered GameBoard server on the local network.
@@ -28,6 +30,16 @@ class MdnsDiscovery {
 
     try {
       await client.start();
+    } on OSError catch (e) {
+      // errno 48 (macOS/iOS) or 98 (Linux) = EADDRINUSE
+      // Happens when the system mDNS daemon already holds port 5353.
+      if (e.errorCode == 48 || e.errorCode == 98) {
+        throw Exception('자동 서버 탐색을 사용할 수 없어요 (포트 5353 사용 중).\nIP를 직접 입력하거나 QR 코드를 스캔하세요.');
+      }
+      rethrow;
+    }
+
+    try {
 
       await for (final PtrResourceRecord ptr in client.lookup<PtrResourceRecord>(
         ResourceRecordQuery.serverPointer(_serviceType),
