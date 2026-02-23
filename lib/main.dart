@@ -76,7 +76,7 @@ class RoleSelectScreen extends StatelessWidget {
   }
 
   void _go(BuildContext context, Widget screen) {
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute<void>(builder: (_) => screen),
     );

@@ -163,11 +163,51 @@ class _GameboardScreenState extends State<GameboardScreen> {
     return false;
   }
 
+  /// Handles back navigation. If players are connected, shows a confirmation
+  /// dialog before stopping the server and going back.
+  Future<bool> _onWillPop() async {
+    if (_playerNames.isEmpty) return true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('게임 종료'),
+        content: Text(
+          '현재 ${_playerNames.length}명이 접속 중입니다.\n'
+          '뒤로 가면 모든 플레이어가 자동으로 메인 화면으로 이동합니다.\n\n'
+          '계속하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('나가기', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('board-go')),
-      body: _buildBody(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final canLeave = await _onWillPop();
+        if (canLeave && context.mounted) {
+          await _handle?.stop();
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('board-go')),
+        body: _buildBody(),
+      ),
     );
   }
 
