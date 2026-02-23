@@ -25,36 +25,46 @@ class MdnsDiscovery {
   static Future<List<DiscoveredServer>> discover({
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    final client = MDnsClient();
+    // Use reuseAddress + reusePort so we can share port 5353 with the
+    // system mDNS daemon (mDNSResponder on iOS/macOS).
+    final client = MDnsClient(
+      rawDatagramSocketFactory: (
+        dynamic host,
+        int port, {
+        bool reuseAddress = false,
+        bool reusePort = false,
+        int ttl = 1,
+      }) {
+        return RawDatagramSocket.bind(
+          host,
+          port,
+          reuseAddress: true,
+          reusePort: true,
+          ttl: ttl,
+        );
+      },
+    );
+
     final results = <DiscoveredServer>[];
 
     try {
       await client.start();
-    } on OSError catch (e) {
-      // errno 48 (macOS/iOS) or 98 (Linux) = EADDRINUSE
-      // Happens when the system mDNS daemon already holds port 5353.
-      if (e.errorCode == 48 || e.errorCode == 98) {
-        throw Exception('자동 서버 탐색을 사용할 수 없어요 (포트 5353 사용 중).\nIP를 직접 입력하거나 QR 코드를 스캔하세요.');
-      }
-      rethrow;
-    }
 
-    try {
-
-      await for (final PtrResourceRecord ptr in client.lookup<PtrResourceRecord>(
+      await for (final PtrResourceRecord ptr
+          in client.lookup<PtrResourceRecord>(
         ResourceRecordQuery.serverPointer(_serviceType),
         timeout: timeout,
       )) {
-        // For each PTR record, look up the SRV record to get host/port.
         await for (final SrvResourceRecord srv
             in client.lookup<SrvResourceRecord>(
           ResourceRecordQuery.service(ptr.domainName),
           timeout: const Duration(seconds: 2),
         )) {
           results.add(
-            DiscoveredServer(host: srv.target, port: srv.port, name: ptr.domainName),
+            DiscoveredServer(
+                host: srv.target, port: srv.port, name: ptr.domainName),
           );
-          break; // take the first SRV per PTR
+          break;
         }
       }
     } finally {
