@@ -2,16 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../lib/client/gamenode/gamenode_screen.dart';
 import '../../lib/client/gamenode/discovery_screen.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('GameNodeScreen', () {
     testWidgets('shows discovery screen when not connected', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: GameNodeScreen()),
       );
+      // Allow PlayerIdentity.load() to complete.
+      await tester.pumpAndSettle();
 
       expect(find.byType(DiscoveryScreen), findsOneWidget);
     });
@@ -20,7 +27,62 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(home: GameNodeScreen()),
       );
+      await tester.pumpAndSettle();
       expect(find.text('board-go'), findsOneWidget);
+    });
+
+    testWidgets('AppBar shows an edit-nickname icon button', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: GameNodeScreen()),
+      );
+      await tester.pumpAndSettle();
+
+      // The edit icon (Icons.edit) must always be visible in the AppBar,
+      // regardless of connection state.
+      expect(find.byIcon(Icons.edit), findsOneWidget);
+    });
+
+    testWidgets('tapping edit icon shows nickname dialog with TextField',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: GameNodeScreen()),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.edit));
+      await tester.pumpAndSettle();
+
+      // Dialog must be present.
+      expect(find.byType(AlertDialog), findsOneWidget);
+      // The nickname TextField is inside the dialog — use descendant finder.
+      final nicknameField = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      expect(nicknameField, findsOneWidget);
+    });
+
+    testWidgets('saving nickname in dialog updates displayed nickname',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: GameNodeScreen()),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.edit));
+      await tester.pumpAndSettle();
+
+      // Target the nickname TextField inside the dialog specifically.
+      final nicknameField = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(nicknameField, 'Alice');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      // Dialog should close.
+      expect(find.byType(AlertDialog), findsNothing);
     });
   });
 
