@@ -24,12 +24,14 @@ class GameNodeScreen extends StatefulWidget {
 class _GameNodeScreenState extends State<GameNodeScreen> {
   WsClient? _client;
   bool _connected = false;
+  bool _disposing = false;
   Map<String, dynamic>? _gameState;
   final String _playerId =
       'player-${DateTime.now().millisecondsSinceEpoch}';
 
   @override
   void dispose() {
+    _disposing = true;
     _client?.dispose();
     super.dispose();
   }
@@ -38,7 +40,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     final client = WsClient(
       uri: Uri.parse(wsUrl),
       onConnectionStateChange: (connected) {
-        if (mounted) setState(() => _connected = connected);
+        if (mounted && !_disposing) setState(() => _connected = connected);
       },
     );
 
