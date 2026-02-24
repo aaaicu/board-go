@@ -4,6 +4,12 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>QR 코드를 스캔하여 게임 보드에 접속합니다.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>로컬 네트워크의 게임 보드 서버를 탐색하고 접속합니다.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_boardgo._tcp</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

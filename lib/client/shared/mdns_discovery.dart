@@ -1,6 +1,6 @@
-import 'dart:io';
+import 'dart:async';
 
-import 'package:multicast_dns/multicast_dns.dart';
+import 'package:bonsoir/bonsoir.dart';
 
 /// A discovered GameBoard server on the local network.
 class DiscoveredServer {
@@ -16,7 +16,10 @@ class DiscoveredServer {
   String toString() => '${name ?? host}:$port';
 }
 
-/// Scans the local network for GameBoard servers advertised via mDNS.
+/// Scans the local network for GameBoard servers advertised via mDNS/Bonjour.
+///
+/// Uses [bonsoir] which delegates to the native Bonjour API on iOS (no raw
+/// socket binding to port 5353 → no EADDRINUSE) and Android NSD on Android.
 ///
 /// Returns a list of [DiscoveredServer] entries found within [timeout].
 class MdnsDiscovery {
@@ -25,50 +28,36 @@ class MdnsDiscovery {
   static Future<List<DiscoveredServer>> discover({
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    // Use reuseAddress + reusePort so we can share port 5353 with the
-    // system mDNS daemon (mDNSResponder on iOS/macOS).
-    final client = MDnsClient(
-      rawDatagramSocketFactory: (
-        dynamic host,
-        int port, {
-        bool reuseAddress = false,
-        bool reusePort = false,
-        int ttl = 1,
-      }) {
-        return RawDatagramSocket.bind(
-          host,
-          port,
-          reuseAddress: true,
-          reusePort: true,
-          ttl: ttl,
-        );
-      },
-    );
-
     final results = <DiscoveredServer>[];
+    final discovery = BonsoirDiscovery(type: _serviceType);
 
-    try {
-      await client.start();
+    // initialize() replaces the old .ready future in bonsoir 6.x
+    await discovery.initialize();
 
-      await for (final PtrResourceRecord ptr
-          in client.lookup<PtrResourceRecord>(
-        ResourceRecordQuery.serverPointer(_serviceType),
-        timeout: timeout,
-      )) {
-        await for (final SrvResourceRecord srv
-            in client.lookup<SrvResourceRecord>(
-          ResourceRecordQuery.service(ptr.domainName),
-          timeout: const Duration(seconds: 2),
-        )) {
-          results.add(
-            DiscoveredServer(
-                host: srv.target, port: srv.port, name: ptr.domainName),
-          );
-          break;
+    StreamSubscription? subscription;
+    subscription = discovery.eventStream?.listen((event) {
+      if (event is BonsoirDiscoveryServiceFoundEvent) {
+        // Trigger resolution to get the host address
+        discovery.serviceResolver.resolveService(event.service);
+      } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
+        final service = event.service;
+        final host = service.host;
+        if (host != null && host.isNotEmpty) {
+          results.add(DiscoveredServer(
+            host: host,
+            port: service.port,
+            name: service.name,
+          ));
         }
       }
+    });
+
+    try {
+      await discovery.start();
+      await Future.delayed(timeout);
     } finally {
-      client.stop();
+      await subscription?.cancel();
+      await discovery.stop();
     }
 
     return results;

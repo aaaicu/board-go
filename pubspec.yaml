@@ -17,7 +17,7 @@ dependencies:
   web_socket_channel: ^3.0.0
 
   # Device discovery & connection
-  multicast_dns: ^0.3.2
+  bonsoir: ^6.0.0
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.0.0
 

@@ -1,16 +1,19 @@
 import 'dart:io';
 
-import 'package:multicast_dns/multicast_dns.dart';
+import 'package:bonsoir/bonsoir.dart';
 
-/// Registers the GameBoard WebSocket server via mDNS/zeroconf so that GameNode
+/// Registers the GameBoard WebSocket server via mDNS/Bonjour so that GameNode
 /// apps can discover it automatically on the same Wi-Fi network.
+///
+/// Uses [bonsoir] which delegates to native Bonjour on iOS/macOS and Android
+/// NSD on Android — no raw socket binding required, so no EADDRINUSE.
 ///
 /// The service is advertised under the `_boardgo._tcp` service type.
 class MdnsRegistrar {
   static const String _serviceType = '_boardgo._tcp';
-  static const String _serviceName = 'board-go';
+  static const String _serviceName = 'Board Go';
 
-  MDnsClient? _client;
+  BonsoirBroadcast? _broadcast;
   bool _registered = false;
 
   bool get isRegistered => _registered;
@@ -23,23 +26,23 @@ class MdnsRegistrar {
     int port = 8080,
     String instanceName = _serviceName,
   }) async {
-    _client = MDnsClient();
-    await _client!.start();
+    final service = BonsoirService(
+      name: instanceName,
+      type: _serviceType,
+      port: port,
+    );
 
-    // multicast_dns does not expose a high-level "register" API on all
-    // platforms — full SRV/TXT registration requires platform-specific code
-    // (Bonjour on iOS/macOS, NSD on Android).  The shelf server will be
-    // discoverable once we integrate native mDNS registration.
-    //
-    // For now we mark registration as "started" so the rest of the app can
-    // proceed; Phase 5 will add the native bridge.
+    _broadcast = BonsoirBroadcast(service: service);
+    // initialize() must be awaited before start() in bonsoir 6.x
+    await _broadcast!.initialize();
+    await _broadcast!.start();
     _registered = true;
   }
 
   /// Stops advertising and releases resources.
   Future<void> unregister() async {
-    _client?.stop();
-    _client = null;
+    await _broadcast?.stop();
+    _broadcast = null;
     _registered = false;
   }
 
