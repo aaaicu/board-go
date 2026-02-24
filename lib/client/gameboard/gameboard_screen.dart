@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../server/mdns_registrar.dart';
 import '../../server/server_isolate.dart';
 import '../../shared/game_pack/game_state.dart';
 import '../../shared/game_pack/game_pack_interface.dart';
@@ -71,6 +72,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
   final List<String> _playerNames = [];
   StreamSubscription<PlayerEvent>? _eventSub;
+  final _mdns = MdnsRegistrar();
 
   @override
   void initState() {
@@ -82,6 +84,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
   void dispose() {
     _eventSub?.cancel();
     _handle?.stop();
+    _mdns.unregister();
     super.dispose();
   }
 
@@ -90,6 +93,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
       final handle = await widget.serverStarter();
 
       final (ip, isEmulator) = await _getLocalIp();
+
+      // Advertise the server via mDNS/Bonjour so GameNode can auto-discover.
+      await _mdns.register(port: handle.port);
 
       // Subscribe to player join/leave events from the server isolate.
       final sub = handle.playerEvents.listen((event) {

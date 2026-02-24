@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:bonsoir/bonsoir.dart';
+import 'package:flutter/services.dart';
 
 /// Registers the GameBoard WebSocket server via mDNS/Bonjour so that GameNode
 /// apps can discover it automatically on the same Wi-Fi network.
@@ -33,17 +34,28 @@ class MdnsRegistrar {
     );
 
     _broadcast = BonsoirBroadcast(service: service);
-    // initialize() must be awaited before start() in bonsoir 6.x
-    await _broadcast!.initialize();
-    await _broadcast!.start();
-    _registered = true;
+    try {
+      // initialize() must be awaited before start() in bonsoir 6.x
+      await _broadcast!.initialize();
+      await _broadcast!.start();
+      _registered = true;
+    } on MissingPluginException {
+      // Platform plugin unavailable (test env / unsupported platform).
+      // mDNS registration is skipped — QR code fallback remains available.
+      _broadcast = null;
+    }
   }
 
   /// Stops advertising and releases resources.
   Future<void> unregister() async {
-    await _broadcast?.stop();
-    _broadcast = null;
-    _registered = false;
+    try {
+      await _broadcast?.stop();
+    } on MissingPluginException {
+      // ignore — plugin unavailable in test/unsupported environments
+    } finally {
+      _broadcast = null;
+      _registered = false;
+    }
   }
 
   /// Returns the primary non-loopback IPv4 address of this device, or `null`
