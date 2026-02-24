@@ -158,6 +158,78 @@ void main() {
       await tester.pump();
       expect(find.text('Alice'), findsNothing);
     });
+
+    testWidgets('both players shown when two join with same displayName',
+        (tester) async {
+      late _FakeHandle handle;
+      await tester.runAsync(() async {
+        handle = _FakeHandle();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GameboardScreen(serverStarter: () async => handle),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        handle.events.add(const PlayerEvent(
+          joined: true,
+          playerId: 'p1',
+          displayName: 'Player',
+        ));
+        handle.events.add(const PlayerEvent(
+          joined: true,
+          playerId: 'p2',
+          displayName: 'Player',
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+
+      // Both players must be tracked — count should be 2
+      expect(find.textContaining('2'), findsWidgets);
+    });
+
+    testWidgets('player count correct after one of two same-named players leaves',
+        (tester) async {
+      late _FakeHandle handle;
+      await tester.runAsync(() async {
+        handle = _FakeHandle();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GameboardScreen(serverStarter: () async => handle),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        handle.events.add(const PlayerEvent(
+          joined: true,
+          playerId: 'p1',
+          displayName: 'Player',
+        ));
+        handle.events.add(const PlayerEvent(
+          joined: true,
+          playerId: 'p2',
+          displayName: 'Player',
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      // 2 players connected
+
+      await tester.runAsync(() async {
+        // p1 leaves
+        handle.events.add(const PlayerEvent(
+          joined: false,
+          playerId: 'p1',
+          displayName: 'Player',
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+
+      // p2 still connected — status label must show exactly 1
+      expect(find.text('Players connected: 1'), findsOneWidget);
+      // Player count of 0 must not appear in the status label
+      expect(find.text('Players connected: 0'), findsNothing);
+    });
   });
 
   group('ServerStatusWidget', () {

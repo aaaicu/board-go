@@ -73,9 +73,13 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       _connected = true;
     });
 
-    // Announce ourselves.
+    // Announce ourselves. Use the last 4 digits of the epoch-based playerId as
+    // a short unique suffix so every device gets a distinct display name.
     client.sendMessage(
-      JoinMessage.join(playerId: _playerId, displayName: 'Player').toEnvelope(),
+      JoinMessage.join(
+        playerId: _playerId,
+        displayName: 'Player#${_playerId.substring(_playerId.length - 4)}',
+      ).toEnvelope(),
     );
   }
 

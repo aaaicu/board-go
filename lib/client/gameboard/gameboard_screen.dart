@@ -70,7 +70,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
   bool _isEmulatorIp = false;
   String? _error;
 
-  final List<String> _playerNames = [];
+  final Map<String, String> _players = {}; // playerId → displayName
   StreamSubscription<PlayerEvent>? _eventSub;
   final _mdns = MdnsRegistrar();
 
@@ -102,11 +102,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
         if (!mounted) return;
         setState(() {
           if (event.joined) {
-            if (!_playerNames.contains(event.displayName)) {
-              _playerNames.add(event.displayName);
-            }
+            _players[event.playerId] = event.displayName;
           } else {
-            _playerNames.remove(event.displayName);
+            _players.remove(event.playerId);
           }
         });
       });
@@ -172,14 +170,14 @@ class _GameboardScreenState extends State<GameboardScreen> {
   /// Handles back navigation. If players are connected, shows a confirmation
   /// dialog before stopping the server and going back.
   Future<bool> _onWillPop() async {
-    if (_playerNames.isEmpty) return true;
+    if (_players.isEmpty) return true;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('게임 종료'),
         content: Text(
-          '현재 ${_playerNames.length}명이 접속 중입니다.\n'
+          '현재 ${_players.length}명이 접속 중입니다.\n'
           '뒤로 가면 모든 플레이어가 자동으로 메인 화면으로 이동합니다.\n\n'
           '계속하시겠습니까?',
         ),
@@ -263,8 +261,8 @@ class _GameboardScreenState extends State<GameboardScreen> {
             ),
           ServerStatusWidget(
             port: handle.port,
-            playerCount: _playerNames.length,
-            playerNames: _playerNames,
+            playerCount: _players.length,
+            playerNames: _players.values.toList(),
           ),
           const SizedBox(height: 24),
           Text(
