@@ -1,13 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../../server/mdns_registrar.dart';
 import '../../server/server_isolate.dart';
-import '../../shared/game_pack/game_state.dart';
 import '../../shared/game_pack/game_pack_interface.dart';
+import '../../shared/game_pack/game_state.dart';
 import '../../shared/game_pack/player_action.dart';
+import '../../shared/game_pack/views/board_view.dart';
+import '../../shared/messages/board_view_message.dart';
+import '../../shared/messages/lobby_state_message.dart';
+import '../../shared/messages/ws_message.dart';
+import 'game_board_play_screen.dart';
+import 'lobby_screen.dart';
 import 'qr_code_widget.dart';
 import 'server_status_widget.dart';
 
@@ -72,7 +79,21 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
   final Map<String, String> _players = {}; // playerId → displayName
   StreamSubscription<PlayerEvent>? _eventSub;
+  StreamSubscription<LobbyStateEvent>? _lobbySub;
+  StreamSubscription<BoardViewEvent>? _boardViewSub;
   final _mdns = MdnsRegistrar();
+
+  /// Latest lobby state received from the server isolate.
+  LobbyStateMessage _lobbyState = const LobbyStateMessage(
+    players: [],
+    canStart: false,
+  );
+
+  /// Latest board view received from the server after game start (Sprint 2).
+  BoardView? _boardView;
+
+  /// True once [handle.startGame()] has been called.
+  bool _gameStarted = false;
 
   @override
   void initState() {
@@ -83,6 +104,8 @@ class _GameboardScreenState extends State<GameboardScreen> {
   @override
   void dispose() {
     _eventSub?.cancel();
+    _lobbySub?.cancel();
+    _boardViewSub?.cancel();
     _handle?.stop();
     _mdns.unregister();
     super.dispose();
@@ -98,7 +121,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
       await _mdns.register(port: handle.port);
 
       // Subscribe to player join/leave events from the server isolate.
-      final sub = handle.playerEvents.listen((event) {
+      final playerSub = handle.playerEvents.listen((event) {
         if (!mounted) return;
         setState(() {
           if (event.joined) {
@@ -109,12 +132,36 @@ class _GameboardScreenState extends State<GameboardScreen> {
         });
       });
 
+      // Subscribe to lobby state snapshots from the server isolate.
+      final lobbySub = handle.lobbyStateEvents.listen((event) {
+        if (!mounted) return;
+        setState(() {
+          _lobbyState = LobbyStateMessage(
+            players: event.players
+                .map((p) => LobbyStatePlayerInfo.fromJson(p))
+                .toList(),
+            canStart: event.canStart,
+          );
+        });
+      });
+
+      // Subscribe to board-view updates from the server isolate (Sprint 2).
+      final boardViewSub = handle.boardViewEvents.listen((event) {
+        if (!mounted) return;
+        setState(() {
+          _boardView = BoardView.fromJson(event.boardView);
+          _gameStarted = true;
+        });
+      });
+
       if (mounted) {
         setState(() {
           _handle = handle;
           _localIp = ip;
           _isEmulatorIp = isEmulator;
-          _eventSub = sub;
+          _eventSub = playerSub;
+          _lobbySub = lobbySub;
+          _boardViewSub = boardViewSub;
         });
       }
     } catch (e) {
@@ -232,47 +279,62 @@ class _GameboardScreenState extends State<GameboardScreen> {
     final connectionData = '$displayIp:${handle.port}';
     final qrData = 'ws://$displayIp:${handle.port}/ws';
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          if (_isEmulatorIp)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade100,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber, color: Colors.orange),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '에뮬레이터 전용 IP입니다.\n외부 기기에서 접속할 수 없어요. 실제 기기를 사용해주세요.',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
+    return Column(
+      children: [
+        if (_isEmulatorIp)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange),
             ),
-          ServerStatusWidget(
+            child: const Row(
+              children: [
+                Icon(Icons.warning_amber, color: Colors.orange),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '에뮬레이터 전용 IP입니다.\n외부 기기에서 접속할 수 없어요. 실제 기기를 사용해주세요.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Server status bar (always visible)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: ServerStatusWidget(
             port: handle.port,
             playerCount: _players.length,
             playerNames: _players.values.toList(),
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Scan to join',
-            style: Theme.of(context).textTheme.titleLarge,
+        ),
+        // In-game: show the board view.
+        if (_gameStarted && _boardView != null)
+          Expanded(
+            child: GameBoardPlayScreen(
+              boardView: _boardView!,
+              playerNames: Map<String, String>.from(_players),
+            ),
+          )
+        // Lobby: show the lobby screen.
+        else
+          Expanded(
+            child: LobbyScreen(
+              lobbyState: _lobbyState,
+              serverAddress: connectionData,
+              qrData: qrData,
+              onStartGame: _lobbyState.canStart
+                  ? (String packId) async {
+                      await handle.startGame(packId: packId);
+                    }
+                  : null,
+            ),
           ),
-          const SizedBox(height: 16),
-          QrCodeWidget(connectionData: qrData, displayText: connectionData),
-        ],
-      ),
+      ],
     );
   }
 }

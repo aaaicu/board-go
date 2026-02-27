@@ -22,6 +22,34 @@ class PlayerEvent {
   });
 }
 
+/// A lobby-state snapshot forwarded from the server Isolate to the UI.
+///
+/// Sent whenever the lobby state changes (player joins, leaves, or toggles
+/// ready). The UI can use this to update the [LobbyScreen] without parsing
+/// raw WebSocket JSON.
+class LobbyStateEvent {
+  /// Serialised [LobbyStatePlayerInfo] entries.
+  final List<Map<String, dynamic>> players;
+  final bool canStart;
+
+  const LobbyStateEvent({
+    required this.players,
+    required this.canStart,
+  });
+}
+
+/// A board-view snapshot forwarded from the server Isolate to the UI isolate
+/// after every game action.
+///
+/// The UI uses this to update the [GameBoardPlayScreen] without subscribing
+/// to the WebSocket itself.
+class BoardViewEvent {
+  /// The serialised [BoardView] JSON map.
+  final Map<String, dynamic> boardView;
+
+  const BoardViewEvent({required this.boardView});
+}
+
 // ---------------------------------------------------------------------------
 // Command / response types
 // ---------------------------------------------------------------------------
@@ -45,6 +73,16 @@ class _StartServerCommand extends _ServerCommand {
 class _StopServerCommand extends _ServerCommand {
   final SendPort replyPort;
   _StopServerCommand({required this.replyPort});
+}
+
+/// Signals the server isolate to start the game (transition from lobby).
+class _StartGameCommand extends _ServerCommand {
+  final SendPort replyPort;
+
+  /// The pack ID to use for the game session.
+  final String packId;
+
+  _StartGameCommand({required this.replyPort, required this.packId});
 }
 
 class _ServerStarted {
@@ -86,6 +124,9 @@ void _serverIsolateEntry(_IsolateConfig config) {
         initialState: message.initialState,
       );
       message.replyPort.send(_ServerStarted(server.port!));
+    } else if (message is _StartGameCommand) {
+      server.startGame(packId: message.packId);
+      message.replyPort.send(null);
     } else if (message is _StopServerCommand) {
       await server.stop();
       message.replyPort.send(null);
@@ -109,6 +150,18 @@ abstract class ServerHandle {
   /// Stream of player join/leave events emitted by the server.
   Stream<PlayerEvent> get playerEvents;
 
+  /// Stream of lobby-state snapshots emitted whenever the lobby changes.
+  Stream<LobbyStateEvent> get lobbyStateEvents;
+
+  /// Stream of board-view snapshots emitted after each in-game action.
+  Stream<BoardViewEvent> get boardViewEvents;
+
+  /// Signals the server to transition from lobby to the in-game phase.
+  ///
+  /// [packId] selects which game-pack rules to activate.
+  /// Defaults to `'simple_card_battle'`.
+  Future<void> startGame({String packId = 'simple_card_battle'});
+
   Future<void> stop();
 }
 
@@ -120,6 +173,10 @@ class ServerIsolateHandle implements ServerHandle {
   bool _running;
   final StreamController<PlayerEvent> _eventController =
       StreamController<PlayerEvent>.broadcast();
+  final StreamController<LobbyStateEvent> _lobbyController =
+      StreamController<LobbyStateEvent>.broadcast();
+  final StreamController<BoardViewEvent> _boardViewController =
+      StreamController<BoardViewEvent>.broadcast();
 
   ServerIsolateHandle._({
     required this.port,
@@ -134,6 +191,20 @@ class ServerIsolateHandle implements ServerHandle {
   Stream<PlayerEvent> get playerEvents => _eventController.stream;
 
   @override
+  Stream<LobbyStateEvent> get lobbyStateEvents => _lobbyController.stream;
+
+  @override
+  Stream<BoardViewEvent> get boardViewEvents => _boardViewController.stream;
+
+  @override
+  Future<void> startGame({String packId = 'simple_card_battle'}) async {
+    final reply = ReceivePort();
+    _commandPort.send(_StartGameCommand(replyPort: reply.sendPort, packId: packId));
+    await reply.first;
+    reply.close();
+  }
+
+  @override
   Future<void> stop() async {
     if (!_running) return;
     final reply = ReceivePort();
@@ -142,6 +213,8 @@ class ServerIsolateHandle implements ServerHandle {
     reply.close();
     _running = false;
     await _eventController.close();
+    await _lobbyController.close();
+    await _boardViewController.close();
   }
 }
 
@@ -187,10 +260,15 @@ class ServerIsolate {
       commandPort: commandPort,
     );
 
-    // Forward PlayerEvents from the ReceivePort to the handle's StreamController.
+    // Forward events from the ReceivePort to the handle's StreamControllers.
     eventReceivePort.listen((event) {
       if (event is PlayerEvent && !handle._eventController.isClosed) {
         handle._eventController.add(event);
+      } else if (event is LobbyStateEvent && !handle._lobbyController.isClosed) {
+        handle._lobbyController.add(event);
+      } else if (event is BoardViewEvent &&
+          !handle._boardViewController.isClosed) {
+        handle._boardViewController.add(event);
       }
     });
 

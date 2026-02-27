@@ -1,0 +1,7 @@
+{
+  "boardStyle": "card_table",
+  "playerAreaPosition": "bottom",
+  "sharedAreaPosition": "center",
+  "backgroundColor": "#1B5E20",
+  "cardBackColor": "#1565C0"
+}

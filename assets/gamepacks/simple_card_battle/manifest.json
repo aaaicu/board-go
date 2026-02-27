@@ -1,0 +1,11 @@
+{
+  "id": "simple_card_battle",
+  "name": "Simple Card Battle",
+  "nameKo": "심플 카드 배틀",
+  "description": "손패의 카드를 사용해 점수를 쌓는 간단한 카드 게임",
+  "minPlayers": 2,
+  "maxPlayers": 4,
+  "estimatedMinutes": 15,
+  "version": "1.0.0",
+  "rulesClass": "SimpleCardGameRules"
+}

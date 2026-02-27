@@ -11,6 +11,7 @@ import '../../lib/shared/game_pack/player_action.dart';
 import '../../lib/shared/messages/ws_message.dart';
 import '../../lib/shared/messages/action_message.dart';
 import '../../lib/shared/messages/join_message.dart';
+import '../../lib/shared/messages/join_room_ack_message.dart';
 import '../../lib/shared/messages/state_update_message.dart';
 
 /// Simple game pack that counts processed actions in the state.
@@ -35,12 +36,21 @@ class _CounterGamePack implements GamePackInterface {
   Future<void> dispose() async {}
 }
 
-/// Connects a WebSocket client to the test server and returns a helper
-/// that sends/receives typed [WsMessage]s.
+/// Connects a WebSocket client to the test server.
+/// Uses a buffered broadcast stream to avoid missing early messages.
 class _WsClient {
   final WebSocketChannel _channel;
+  late final Stream<WsMessage> messages;
+  final _controller = StreamController<WsMessage>.broadcast();
 
-  _WsClient(this._channel);
+  _WsClient(this._channel) {
+    _channel.stream.listen(
+      (raw) => _controller.add(
+          WsMessage.fromJson(jsonDecode(raw as String) as Map<String, dynamic>)),
+      onDone: _controller.close,
+    );
+    messages = _controller.stream;
+  }
 
   static Future<_WsClient> connect(int port) async {
     final uri = Uri.parse('ws://localhost:$port/ws');
@@ -49,12 +59,11 @@ class _WsClient {
     return _WsClient(ch);
   }
 
-  void send(WsMessage msg) =>
-      _channel.sink.add(jsonEncode(msg.toJson()));
+  void send(WsMessage msg) => _channel.sink.add(jsonEncode(msg.toJson()));
 
-  Stream<WsMessage> get messages => _channel.stream.map(
-        (raw) => WsMessage.fromJson(jsonDecode(raw as String) as Map<String, dynamic>),
-      );
+  Future<WsMessage> next(WsMessageType type,
+      {Duration timeout = const Duration(seconds: 5)}) =>
+      messages.firstWhere((m) => m.type == type).timeout(timeout);
 
   Future<void> close() => _channel.sink.close();
 }
@@ -87,22 +96,20 @@ void main() {
       expect(server.port, greaterThan(0));
     });
 
-    test('player can join and receives welcome state update', () async {
+    test('player can join and receives JOIN_ROOM_ACK', () async {
       final client = await _WsClient.connect(server.port!);
-      final msgs = client.messages.asBroadcastStream();
 
-      // Send join message
       client.send(
         JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope(),
       );
 
-      // Expect a STATE_UPDATE back with current game state
-      final msg = await msgs
-          .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-          .timeout(const Duration(seconds: 5));
+      // Server now responds with JOIN_ROOM_ACK (not stateUpdate) in lobby phase.
+      final ack = JoinRoomAckMessage.fromEnvelope(
+          await client.next(WsMessageType.joinRoomAck));
 
-      final update = StateUpdateMessage.fromEnvelope(msg);
-      expect(update.state['gameId'], equals('test-game'));
+      expect(ack.success, isTrue);
+      expect(ack.playerId, equals('p1'));
+      expect(ack.reconnectToken, isNotNull);
 
       await client.close();
     });
@@ -111,10 +118,7 @@ void main() {
       final client1 = await _WsClient.connect(server.port!);
       final client2 = await _WsClient.connect(server.port!);
 
-      final stream1 = client1.messages.asBroadcastStream();
-      final stream2 = client2.messages.asBroadcastStream();
-
-      // Both join
+      // Both join and wait for ACK.
       client1.send(
         JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope(),
       );
@@ -122,24 +126,16 @@ void main() {
         JoinMessage.join(playerId: 'p2', displayName: 'Bob').toEnvelope(),
       );
 
-      // Wait for both welcome messages
       await Future.wait([
-        stream1
-            .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-            .timeout(const Duration(seconds: 5)),
-        stream2
-            .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-            .timeout(const Duration(seconds: 5)),
+        client1.next(WsMessageType.joinRoomAck),
+        client2.next(WsMessageType.joinRoomAck),
       ]);
 
-      // p1 sends an action
-      final actionFuture1 = stream1
-          .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-          .timeout(const Duration(seconds: 5));
-      final actionFuture2 = stream2
-          .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-          .timeout(const Duration(seconds: 5));
+      // Arm state-update listeners BEFORE sending the action.
+      final actionFuture1 = client1.next(WsMessageType.stateUpdate);
+      final actionFuture2 = client2.next(WsMessageType.stateUpdate);
 
+      // p1 sends an action (session is still in lobby → goes through legacy path).
       client1.send(
         ActionMessage(
           playerId: 'p1',
@@ -151,7 +147,7 @@ void main() {
       final update1 = StateUpdateMessage.fromEnvelope(await actionFuture1);
       final update2 = StateUpdateMessage.fromEnvelope(await actionFuture2);
 
-      // Both clients should see the updated count (nested under 'data')
+      // Both clients should see the updated count (nested under 'data').
       final data1 = update1.state['data'] as Map;
       final data2 = update2.state['data'] as Map;
       expect(data1['count'], equals(1));
@@ -163,14 +159,11 @@ void main() {
 
     test('invalid action returns error message to the sender only', () async {
       final client = await _WsClient.connect(server.port!);
-      final stream = client.messages.asBroadcastStream();
 
       client.send(
         JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope(),
       );
-      await stream
-          .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-          .timeout(const Duration(seconds: 5));
+      await client.next(WsMessageType.joinRoomAck);
 
       client.send(
         ActionMessage(
@@ -180,10 +173,7 @@ void main() {
         ).toEnvelope(),
       );
 
-      final errorMsg = await stream
-          .firstWhere((m) => m.type == WsMessageType.error)
-          .timeout(const Duration(seconds: 5));
-
+      final errorMsg = await client.next(WsMessageType.error);
       expect(errorMsg.payload['reason'], isNotNull);
 
       await client.close();
@@ -193,8 +183,6 @@ void main() {
       final client1 = await _WsClient.connect(server.port!);
       final client2 = await _WsClient.connect(server.port!);
 
-      final stream2 = client2.messages.asBroadcastStream();
-
       client1.send(
         JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope(),
       );
@@ -202,19 +190,20 @@ void main() {
         JoinMessage.join(playerId: 'p2', displayName: 'Bob').toEnvelope(),
       );
 
-      // Drain welcome messages
-      await stream2
-          .firstWhere((m) => m.type == WsMessageType.stateUpdate)
-          .timeout(const Duration(seconds: 5));
+      // Wait for both ACKs.
+      await Future.wait([
+        client1.next(WsMessageType.joinRoomAck),
+        client2.next(WsMessageType.joinRoomAck),
+      ]);
 
-      // p1 leaves
+      // Arm leave listener on client2 before p1 leaves.
+      final leaveFuture = client2.next(WsMessageType.leave);
+
+      // p1 leaves.
       client1.send(JoinMessage.leave(playerId: 'p1').toEnvelope());
       await client1.close();
 
-      final leaveMsg = await stream2
-          .firstWhere((m) => m.type == WsMessageType.leave)
-          .timeout(const Duration(seconds: 5));
-
+      final leaveMsg = await leaveFuture;
       expect(leaveMsg.payload['playerId'], equals('p1'));
 
       await client2.close();

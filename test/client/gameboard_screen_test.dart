@@ -18,13 +18,31 @@ class _FakeHandle implements ServerHandle {
   final StreamController<PlayerEvent> events =
       StreamController<PlayerEvent>.broadcast();
 
+  final StreamController<LobbyStateEvent> lobbyEvents =
+      StreamController<LobbyStateEvent>.broadcast();
+
+  final StreamController<BoardViewEvent> boardViewEventsController =
+      StreamController<BoardViewEvent>.broadcast();
+
   @override
   Stream<PlayerEvent> get playerEvents => events.stream;
+
+  @override
+  Stream<LobbyStateEvent> get lobbyStateEvents => lobbyEvents.stream;
+
+  @override
+  Stream<BoardViewEvent> get boardViewEvents =>
+      boardViewEventsController.stream;
+
+  @override
+  Future<void> startGame({String packId = 'simple_card_battle'}) async {}
 
   @override
   Future<void> stop() async {
     isRunning = false;
     await events.close();
+    await lobbyEvents.close();
+    await boardViewEventsController.close();
   }
 }
 
