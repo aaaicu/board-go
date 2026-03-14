@@ -77,6 +77,19 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   WsConnectionState _connState = WsConnectionState.connected;
   int _reconnectAttempts = 0;
 
+  // ---------------------------------------------------------------------------
+  // Action pending guard
+  //
+  // Set to true when an action is sent and reset when the next PlayerView
+  // arrives from the server.  This prevents duplicate submissions when the
+  // player taps a button (e.g. End Turn) rapidly before the acknowledgement
+  // comes back — which in a single-player game caused the round counter to
+  // advance multiple times, eventually ending the game prematurely and
+  // showing the "상대방 턴" spinner indefinitely.
+  // ---------------------------------------------------------------------------
+
+  bool _actionPending = false;
+
   @override
   void initState() {
     super.initState();
@@ -268,6 +281,8 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         setState(() {
           _playerView = pvm.playerView;
           if (_phase == _NodePhase.lobby) _phase = _NodePhase.inGame;
+          // Server has processed our action and replied — unblock the UI.
+          _actionPending = false;
         });
 
       // BOARD_VIEW is for the GameBoard (iPad); GameNode ignores it.
@@ -322,8 +337,16 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   }
 
   void _sendAction(String actionType, [Map<String, dynamic> data = const {}]) {
+    // Guard: if a previous action is still awaiting a server response, drop
+    // the duplicate.  This prevents rapid tapping (e.g. END_TURN spam) from
+    // sending multiple identical actions before the server has acknowledged
+    // the first one.
+    if (_actionPending) return;
+
     final identity = _identity;
     if (identity == null) return;
+
+    setState(() => _actionPending = true);
 
     _client?.sendMessage(
       ActionMessage(
@@ -353,6 +376,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       _isReady = false;
       _reconnectAttempts = 0;
       _connState = WsConnectionState.connected;
+      _actionPending = false;
       _lobbyState = const LobbyStateMessage(players: [], canStart: false);
     });
   }
@@ -504,15 +528,18 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: HandWidget(
             hand: pv.hand,
-            allowedTypes: allowedTypes,
-            onCardTap: (cardId) =>
-                _sendAction('PLAY_CARD', {'cardId': cardId}),
+            // Disable card taps while an action is awaiting server response.
+            allowedTypes: _actionPending ? const {} : allowedTypes,
+            onCardTap: _actionPending
+                ? null
+                : (cardId) => _sendAction('PLAY_CARD', {'cardId': cardId}),
           ),
         ),
         const Divider(height: 1),
         // Non-card actions (DRAW_CARD, END_TURN).
         AllowedActionsWidget(
           allowedActions: pv.allowedActions,
+          disabled: _actionPending,
           onActionTap: (action) =>
               _sendAction(action.actionType, action.params),
         ),

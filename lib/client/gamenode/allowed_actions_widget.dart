@@ -6,17 +6,25 @@ import '../../shared/game_pack/views/allowed_action.dart';
 ///
 /// When [allowedActions] is empty it shows a "waiting" message indicating it
 /// is another player's turn.  Otherwise it renders one [ElevatedButton] per
-/// non-PLAY_CARD action (PLAY_CARD actions are handled via [HandWidget]).
+/// non-PLAY_CARD action (DRAW_CARD / END_TURN).
+///
+/// Set [disabled] to true while an action is in-flight to prevent duplicate
+/// submissions before the server acknowledgement arrives.
 class AllowedActionsWidget extends StatelessWidget {
   final List<AllowedAction> allowedActions;
 
   /// Called when the player taps a non-card action (DRAW_CARD / END_TURN).
   final void Function(AllowedAction action)? onActionTap;
 
+  /// When true all action buttons are rendered as disabled (greyed out).
+  /// Use this to block rapid re-taps while waiting for the server to reply.
+  final bool disabled;
+
   const AllowedActionsWidget({
     super.key,
     required this.allowedActions,
     this.onActionTap,
+    this.disabled = false,
   });
 
   @override
@@ -42,7 +50,8 @@ class AllowedActionsWidget extends StatelessWidget {
         children: nonCardActions.map((action) {
           return _ActionButton(
             action: action,
-            onTap: () => onActionTap?.call(action),
+            disabled: disabled,
+            onTap: disabled ? null : () => onActionTap?.call(action),
           );
         }).toList(),
       ),
@@ -87,9 +96,14 @@ class _WaitingBanner extends StatelessWidget {
 
 class _ActionButton extends StatelessWidget {
   final AllowedAction action;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool disabled;
 
-  const _ActionButton({required this.action, required this.onTap});
+  const _ActionButton({
+    required this.action,
+    required this.onTap,
+    this.disabled = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -105,7 +119,9 @@ class _ActionButton extends StatelessWidget {
         size: 18,
       ),
       label: Text(action.label),
-      onPressed: onTap,
+      // Setting onPressed to null disables the button in Flutter's material
+      // design, providing visual feedback that the action is processing.
+      onPressed: disabled ? null : onTap,
     );
   }
 }
