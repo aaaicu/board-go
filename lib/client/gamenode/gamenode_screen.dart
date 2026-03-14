@@ -7,6 +7,7 @@ import '../shared/ws_client.dart';
 import '../shared/player_identity.dart';
 import '../../shared/game_pack/views/allowed_action.dart';
 import '../../shared/game_pack/views/player_view.dart';
+import '../../shared/game_session/session_phase.dart';
 import '../../shared/messages/action_message.dart';
 import '../../shared/messages/join_message.dart';
 import '../../shared/messages/join_room_ack_message.dart';
@@ -17,6 +18,7 @@ import '../../shared/messages/state_update_message.dart';
 import '../../shared/messages/ws_message.dart';
 import 'allowed_actions_widget.dart';
 import 'discovery_screen.dart';
+import 'game_over_widget.dart';
 import 'hand_widget.dart';
 import 'lobby_waiting_screen.dart';
 import 'player_action_widget.dart';
@@ -515,6 +517,10 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   }
 
   Widget _buildPlayerViewUI(PlayerView pv) {
+    if (pv.phase == SessionPhase.finished) {
+      return _buildGameOverUI(pv);
+    }
+
     final allowedTypes = pv.allowedActions.map((a) => a.actionType).toSet();
 
     return Column(
@@ -548,6 +554,10 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         _buildScoreSummary(pv),
       ],
     );
+  }
+
+  Widget _buildGameOverUI(PlayerView pv) {
+    return GameOverWidget(playerView: pv, onMainMenu: _disconnect);
   }
 
   Widget _buildTurnBanner(PlayerView pv) {

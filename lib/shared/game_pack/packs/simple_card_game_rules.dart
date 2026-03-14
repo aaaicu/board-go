@@ -19,7 +19,7 @@ import '../views/player_view.dart';
 
 const String _kPackId = 'simple_card_game';
 const int _kHandSize = 5;
-const int _kMaxRounds = 3;
+const int _kMaxRounds = 10;
 const int _kMaxDiscardDisplay = 5;
 const int _kMaxRecentLog = 10;
 

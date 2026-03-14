@@ -113,12 +113,17 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
   Future<void> _startServer() async {
     try {
-      final handle = await widget.serverStarter();
+      // Start the server and resolve the local IP concurrently — neither
+      // depends on the other, so running them in parallel saves time.
+      final results = await Future.wait([
+        widget.serverStarter(),
+        _getLocalIp(),
+      ]);
+      final handle = results[0] as ServerHandle;
+      final (ip, isEmulator) = results[1] as (String?, bool);
 
-      final (ip, isEmulator) = await _getLocalIp();
-
-      // Advertise the server via mDNS/Bonjour so GameNode can auto-discover.
-      await _mdns.register(port: handle.port);
+      // Advertise via mDNS fire-and-forget — don't block the UI on it.
+      unawaited(_mdns.register(port: handle.port));
 
       // Subscribe to player join/leave events from the server isolate.
       final playerSub = handle.playerEvents.listen((event) {

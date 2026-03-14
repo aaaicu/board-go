@@ -386,9 +386,9 @@ void main() {
       expect(_rules.checkGameEnd(state).ended, isTrue);
     });
 
-    test('returns ended=true when round exceeds maximum (3)', () {
+    test('returns ended=true when round exceeds maximum (10)', () {
       var state = _rules.createInitialGameState(_lobbyState());
-      state = state.copyWith(turnState: state.turnState!.copyWith(round: 4));
+      state = state.copyWith(turnState: state.turnState!.copyWith(round: 11));
       expect(_rules.checkGameEnd(state).ended, isTrue);
     });
 
