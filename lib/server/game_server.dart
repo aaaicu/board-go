@@ -230,6 +230,33 @@ class GameServer {
   void startGame({String packId = 'simple_card_battle'}) {
     if (_sessionState.phase != SessionPhase.lobby) return;
 
+    // Select the rules first so we can validate player count.
+    final rules = _createRulesForPack(packId);
+    final connectedCount =
+        _sessions.playerIds.where((id) => _sessions.isConnected(id)).length;
+
+    if (connectedCount < rules.minPlayers) {
+      // Not enough players — broadcast error and abort.
+      _sessions.broadcast(jsonEncode(WsMessage(
+        type: WsMessageType.error,
+        payload: {
+          'reason':
+              '인원 부족: 최소 ${rules.minPlayers}명이 필요합니다 (현재 $connectedCount명)',
+        },
+      ).toJson()));
+      return;
+    }
+    if (connectedCount > rules.maxPlayers) {
+      _sessions.broadcast(jsonEncode(WsMessage(
+        type: WsMessageType.error,
+        payload: {
+          'reason':
+              '인원 초과: 최대 ${rules.maxPlayers}명까지 가능합니다 (현재 $connectedCount명)',
+        },
+      ).toJson()));
+      return;
+    }
+
     // Sync playerOrder from the current session manager.
     final playerOrder = _sessions.playerIds.toList();
     if (playerOrder.isEmpty) return;
@@ -252,8 +279,8 @@ class GameServer {
       playerOrder: playerOrder,
     );
 
-    // Select the rules implementation for this pack before creating the state.
-    _gamePackRules = _createRulesForPack(packId);
+    // Use the rules instance created above for validation.
+    _gamePackRules = rules;
 
     _sessionState = _gamePackRules.createInitialGameState(_sessionState);
 
@@ -397,6 +424,20 @@ class GameServer {
       sink.add(jsonEncode(
         BoardViewMessage(boardView: boardView).toEnvelope().toJson(),
       ));
+
+      // Notify all other players that this player is back online.
+      _sessions.broadcast(
+        jsonEncode(
+          WsMessage(
+            type: WsMessageType.playerReconnected,
+            payload: {
+              'playerId': resolvedPlayerId,
+              'nickname': displayName,
+            },
+          ).toJson(),
+        ),
+        excludePlayerId: resolvedPlayerId,
+      );
     }
 
     // Broadcast updated lobby state to all players (including the new one).
@@ -425,6 +466,9 @@ class GameServer {
         ).toJson(),
       ),
     );
+
+    // Refresh lobby state so the GameBoard reflects the updated player list.
+    _broadcastLobbyState();
   }
 
   void _handleSetReady(SetReadyMessage msg) {

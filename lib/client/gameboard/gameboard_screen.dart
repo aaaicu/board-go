@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../server/mdns_registrar.dart';
 import '../../server/server_isolate.dart';
@@ -100,11 +101,13 @@ class _GameboardScreenState extends State<GameboardScreen> {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     _startServer();
   }
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _lobbySub?.cancel();
     _boardViewSub?.cancel();
     _handle?.stop();

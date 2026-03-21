@@ -1,12 +1,26 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../lib/client/gameboard/gameboard_screen.dart';
 import '../../lib/client/gameboard/server_status_widget.dart';
 import '../../lib/client/gameboard/qr_code_widget.dart';
 import '../../lib/server/server_isolate.dart';
+
+/// Silences wakelock_plus platform-channel calls in widget tests.
+void _mockWakelock() {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMessageHandler(
+    'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle',
+    (_) async {
+      // Return a pigeon-compatible success response: StandardMessageCodec([null]).
+      final encoded = const StandardMessageCodec().encodeMessage([null]);
+      return encoded;
+    },
+  );
+}
 
 /// Lightweight fake handle — no sockets, no isolates.
 class _FakeHandle implements ServerHandle {
@@ -51,6 +65,8 @@ class _FakeHandle implements ServerHandle {
 
 void main() {
   group('GameboardScreen', () {
+    setUp(_mockWakelock);
+
     testWidgets('shows loading indicator while server is starting',
         (tester) async {
       // Completer that never completes → server stays "starting" forever.

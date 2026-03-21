@@ -348,6 +348,12 @@ class _PassThroughRules extends GamePackRules {
   String get packId => 'pass-through';
 
   @override
+  int get minPlayers => 1;
+
+  @override
+  int get maxPlayers => 8;
+
+  @override
   GameSessionState createInitialGameState(GameSessionState s) => s;
 
   @override

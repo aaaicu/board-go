@@ -70,8 +70,16 @@ class _LobbyScreenState extends State<LobbyScreen> {
     }
   }
 
-  bool get _canStart =>
-      widget.lobbyState.canStart && _selectedPackId != null;
+  GamePackManifest? get _selectedPack =>
+      _packs?.where((p) => p.id == _selectedPackId).firstOrNull;
+
+  bool get _canStart {
+    if (!widget.lobbyState.canStart) return false;
+    final pack = _selectedPack;
+    if (pack == null) return false;
+    final count = widget.lobbyState.players.length;
+    return count >= pack.minPlayers && count <= pack.maxPlayers;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +206,16 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   String get _startButtonLabel {
     if (_selectedPackId == null) return '게임 팩을 선택하세요';
+    final pack = _selectedPack;
+    if (pack != null) {
+      final count = widget.lobbyState.players.length;
+      if (count < pack.minPlayers) {
+        return '최소 ${pack.minPlayers}명 필요 (현재 $count명)';
+      }
+      if (count > pack.maxPlayers) {
+        return '최대 ${pack.maxPlayers}명 초과 (현재 $count명)';
+      }
+    }
     if (!widget.lobbyState.canStart) return '모든 플레이어가 준비 완료되면 시작 가능합니다';
     return '게임 시작';
   }

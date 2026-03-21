@@ -97,6 +97,12 @@ class SimpleCardGameRules implements GamePackRules {
   @override
   String get packId => _kPackId;
 
+  @override
+  int get minPlayers => 2;
+
+  @override
+  int get maxPlayers => 4;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------

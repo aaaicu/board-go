@@ -18,6 +18,12 @@ abstract class GamePackRules {
   /// Stable, unique identifier for this pack (e.g. 'simple_card_game').
   String get packId;
 
+  /// Minimum number of players required to start the game.
+  int get minPlayers;
+
+  /// Maximum number of players supported by the game.
+  int get maxPlayers;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------

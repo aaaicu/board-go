@@ -32,6 +32,7 @@ dependencies:
   shared_preferences: ^2.3.0
   uuid: ^4.0.0
   sqflite_common_ffi: ^2.4.0+2
+  wakelock_plus: ^1.5.1
 
 dev_dependencies:
   flutter_test:

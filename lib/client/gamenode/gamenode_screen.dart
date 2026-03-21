@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../shared/ws_client.dart';
 import '../shared/player_identity.dart';
@@ -140,6 +141,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   @override
   void dispose() {
     _disposing = true;
+    WakelockPlus.disable();
     _connStateSub?.cancel();
     _client?.dispose();
     super.dispose();
@@ -157,17 +159,17 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Set Nickname'),
+        title: const Text('닉네임 설정'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'Enter your nickname'),
+          decoration: const InputDecoration(hintText: '닉네임 입력'),
           autofocus: true,
           maxLength: 24,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const Text('취소'),
           ),
           TextButton(
             onPressed: () async {
@@ -185,7 +187,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
               }
               if (context.mounted) Navigator.of(context).pop();
             },
-            child: const Text('Save'),
+            child: const Text('저장'),
           ),
         ],
       ),
@@ -317,15 +319,20 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         final update = StateUpdateMessage.fromEnvelope(msg);
         setState(() {
           _gameState = update.state;
-          // If we receive a game state update we've transitioned to inGame.
-          if (_phase == _NodePhase.lobby) _phase = _NodePhase.inGame;
+          if (_phase == _NodePhase.lobby) {
+            _phase = _NodePhase.inGame;
+            WakelockPlus.enable();
+          }
         });
 
       case WsMessageType.playerView:
         final pvm = PlayerViewMessage.fromEnvelope(msg);
         setState(() {
           _playerView = pvm.playerView;
-          if (_phase == _NodePhase.lobby) _phase = _NodePhase.inGame;
+          if (_phase == _NodePhase.lobby) {
+            _phase = _NodePhase.inGame;
+            WakelockPlus.enable();
+          }
           // Server has processed our action and replied — unblock the UI.
           _actionPending = false;
           // A new PLAYER_VIEW means a new turn has started; clear the warning.
@@ -339,6 +346,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       case WsMessageType.gameReset:
         // Game ended — the old token is no longer useful for this session.
         PlayerIdentity.clearReconnectToken();
+        WakelockPlus.disable();
         setState(() {
           _phase = _NodePhase.lobby;
           _playerView = null;
@@ -357,6 +365,30 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('$nickname 연결 끊김')),
             );
+          }
+        });
+
+      case WsMessageType.playerReconnected:
+        final nickname =
+            msg.payload['nickname'] as String? ?? msg.payload['playerId'] as String? ?? '???';
+        final reconnectedId = msg.payload['playerId'] as String?;
+        // Clear auto-skip warning if it was for this player.
+        if (_autoSkipWarning != null &&
+            (_autoSkipWarning!['playerId'] == reconnectedId ||
+                reconnectedId == null)) {
+          setState(() => _autoSkipWarning = null);
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text('$nickname 재접속됨'),
+                  backgroundColor: Colors.green.shade700,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
           }
         });
 
@@ -602,7 +634,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
-            tooltip: 'Edit Nickname',
+            tooltip: '닉네임 변경',
             onPressed: _showNicknameDialog,
           ),
           if (_phase != _NodePhase.discovery)
@@ -714,14 +746,49 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
   Widget _buildDiscovery() {
     final savedUrl = _savedServerUrl;
-    if (savedUrl == null) {
-      return DiscoveryScreen(onServerSelected: _connectTo);
-    }
     return Column(
       children: [
-        _buildResumeCard(savedUrl),
+        _buildNicknameCard(),
+        if (savedUrl != null) _buildResumeCard(savedUrl),
         Expanded(child: DiscoveryScreen(onServerSelected: _connectTo)),
       ],
+    );
+  }
+
+  /// Compact card displaying the current nickname with an edit shortcut.
+  ///
+  /// Shown at the top of the discovery screen so players can confirm or
+  /// change their display name before joining a server.
+  Widget _buildNicknameCard() {
+    final nickname = _identity?.nickname ?? '...';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Card(
+        elevation: 1,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.person, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '닉네임: $nickname',
+                  style: const TextStyle(fontSize: 15),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit, size: 20),
+                tooltip: '닉네임 변경',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: _showNicknameDialog,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

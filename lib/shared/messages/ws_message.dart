@@ -19,6 +19,7 @@ enum WsMessageType {
   gameReset,
   // Disconnect handling additions
   playerDisconnected,
+  playerReconnected,
   turnAutoSkipWarning,
   // Node-to-node messaging (Sprint 6)
   nodeMessage;
@@ -40,6 +41,7 @@ enum WsMessageType {
         WsMessageType.startGame => 'START_GAME',
         WsMessageType.gameReset => 'GAME_RESET',
         WsMessageType.playerDisconnected => 'PLAYER_DISCONNECTED',
+        WsMessageType.playerReconnected => 'PLAYER_RECONNECTED',
         WsMessageType.turnAutoSkipWarning => 'TURN_AUTO_SKIP_WARNING',
         WsMessageType.nodeMessage => 'NODE_MESSAGE',
       };
@@ -61,6 +63,7 @@ enum WsMessageType {
         'START_GAME' => WsMessageType.startGame,
         'GAME_RESET' => WsMessageType.gameReset,
         'PLAYER_DISCONNECTED' => WsMessageType.playerDisconnected,
+        'PLAYER_RECONNECTED' => WsMessageType.playerReconnected,
         'TURN_AUTO_SKIP_WARNING' => WsMessageType.turnAutoSkipWarning,
         'NODE_MESSAGE' => WsMessageType.nodeMessage,
         _ => throw FormatException('Unknown WsMessageType: $value'),

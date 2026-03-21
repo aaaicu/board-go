@@ -37,24 +37,28 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The edit icon (Icons.edit) must always be visible in the AppBar,
-      // regardless of connection state.
-      expect(find.byIcon(Icons.edit), findsOneWidget);
+      // The edit icon appears in both the AppBar and the nickname card —
+      // verify at least one exists.
+      expect(find.byIcon(Icons.edit), findsWidgets);
     });
 
-    testWidgets('tapping edit icon shows nickname dialog with TextField',
+    testWidgets('tapping edit icon in AppBar shows nickname dialog with TextField',
         (tester) async {
       await tester.pumpWidget(
         const MaterialApp(home: GameNodeScreen()),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.edit));
+      // Tap the AppBar's edit button specifically.
+      await tester.tap(find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byIcon(Icons.edit),
+      ));
       await tester.pumpAndSettle();
 
       // Dialog must be present.
       expect(find.byType(AlertDialog), findsOneWidget);
-      // The nickname TextField is inside the dialog — use descendant finder.
+      // The nickname TextField is inside the dialog.
       final nicknameField = find.descendant(
         of: find.byType(AlertDialog),
         matching: find.byType(TextField),
@@ -69,7 +73,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.edit));
+      await tester.tap(find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byIcon(Icons.edit),
+      ));
       await tester.pumpAndSettle();
 
       // Target the nickname TextField inside the dialog specifically.
@@ -78,7 +85,7 @@ void main() {
         matching: find.byType(TextField),
       );
       await tester.enterText(nicknameField, 'Alice');
-      await tester.tap(find.text('Save'));
+      await tester.tap(find.text('저장'));
       await tester.pumpAndSettle();
 
       // Dialog should close.
