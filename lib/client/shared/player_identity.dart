@@ -12,6 +12,8 @@ import 'package:uuid/uuid.dart';
 class PlayerIdentity {
   static const _keyDeviceId = 'player_device_id';
   static const _keyNickname = 'player_nickname';
+  static const _keyReconnectToken = 'player_reconnect_token';
+  static const _keyReconnectServerUrl = 'player_reconnect_server_url';
   static const _defaultNickname = 'Player';
 
   /// Stable UUID that uniquely identifies this device installation.
@@ -45,5 +47,32 @@ class PlayerIdentity {
   static Future<void> saveNickname(String nickname) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNickname, nickname);
+  }
+
+  /// Persists [token] alongside the [serverUrl] it was issued for.
+  ///
+  /// Only tokens matching [serverUrl] will be returned by [loadReconnectToken],
+  /// preventing a stale token from being sent to a different server.
+  static Future<void> saveReconnectToken(String serverUrl, String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyReconnectToken, token);
+    await prefs.setString(_keyReconnectServerUrl, serverUrl);
+  }
+
+  /// Returns the saved reconnect token if it was issued by [serverUrl],
+  /// or `null` if no token exists or it belongs to a different server.
+  static Future<String?> loadReconnectToken(String serverUrl) async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrl = prefs.getString(_keyReconnectServerUrl);
+    if (savedUrl != serverUrl) return null;
+    return prefs.getString(_keyReconnectToken);
+  }
+
+  /// Removes the saved reconnect token (e.g. on deliberate disconnect or
+  /// after the server session ends).
+  static Future<void> clearReconnectToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyReconnectToken);
+    await prefs.remove(_keyReconnectServerUrl);
   }
 }

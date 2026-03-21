@@ -196,6 +196,9 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     // Persist URL for reconnect reference.
     _wsUrl = wsUrl;
 
+    // Load a previously saved reconnect token for this server (survives app restart).
+    _reconnectToken ??= await PlayerIdentity.loadReconnectToken(wsUrl);
+
     // Dispose of any prior client before creating a new one.
     await _connStateSub?.cancel();
     await _client?.dispose();
@@ -327,6 +330,8 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         break;
 
       case WsMessageType.gameReset:
+        // Game ended — the old token is no longer useful for this session.
+        PlayerIdentity.clearReconnectToken();
         setState(() {
           _phase = _NodePhase.lobby;
           _playerView = null;
@@ -406,6 +411,12 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         _phase = _NodePhase.lobby;
         _isReady = false;
       });
+      // Persist the token so it survives app restarts.
+      final wsUrl = _wsUrl;
+      final token = ack.reconnectToken;
+      if (wsUrl != null && token != null) {
+        PlayerIdentity.saveReconnectToken(wsUrl, token);
+      }
     } else {
       final errorCode = ack.errorCode ?? 'UNKNOWN';
       final errorMessage = ack.errorMessage ?? '접속에 실패했습니다.';
@@ -512,10 +523,14 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       );
     }
     _client?.disconnect();
+    // Deliberate disconnect — clear the saved token so we don't accidentally
+    // reconnect to a stale session on next launch.
+    PlayerIdentity.clearReconnectToken();
     setState(() {
       _client = null;
       _phase = _NodePhase.discovery;
       _assignedPlayerId = null;
+      _reconnectToken = null;
       _gameState = null;
       _playerView = null;
       _isReady = false;
