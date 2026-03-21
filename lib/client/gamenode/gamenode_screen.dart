@@ -78,6 +78,10 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   /// Loaded asynchronously in [initState]; null while loading.
   PlayerIdentity? _identity;
 
+  /// Server URL from the last session, loaded on startup.
+  /// Non-null = show "이어하기" button on the discovery screen.
+  String? _savedServerUrl;
+
   // ---------------------------------------------------------------------------
   // Sprint 3: connection state
   // ---------------------------------------------------------------------------
@@ -127,6 +131,9 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     super.initState();
     PlayerIdentity.load().then((identity) {
       if (mounted) setState(() => _identity = identity);
+    });
+    PlayerIdentity.loadLastServerUrl().then((url) {
+      if (mounted) setState(() => _savedServerUrl = url);
     });
   }
 
@@ -339,6 +346,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           _isReady = false;
           _actionPending = false;
           _autoSkipWarning = null;
+          _savedServerUrl = null;
         });
 
       case WsMessageType.playerDisconnected:
@@ -531,6 +539,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       _phase = _NodePhase.discovery;
       _assignedPlayerId = null;
       _reconnectToken = null;
+      _savedServerUrl = null;
       _gameState = null;
       _playerView = null;
       _isReady = false;
@@ -545,9 +554,49 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   // Build
   // ---------------------------------------------------------------------------
 
+  /// Shows a confirmation dialog when the user tries to leave via back button.
+  /// Returns true if the user confirmed they want to leave.
+  Future<bool> _confirmLeave() async {
+    if (_phase == _NodePhase.discovery) return true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('방에서 나가기'),
+        content: Text(
+          _phase == _NodePhase.inGame
+              ? '게임이 진행 중이에요. 나가면 자리가 유지돼요.\n나중에 이어하기로 돌아올 수 있어요.'
+              : '대기실에서 나갈까요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('나가기', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        final leave = await _confirmLeave();
+        if (leave && mounted) {
+          if (_phase != _NodePhase.discovery) _disconnect();
+          navigator.pop();
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('board-go'),
         actions: [
@@ -588,7 +637,8 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
             _buildConnectionOverlay(),
         ],
       ),
-    );
+    ), // Scaffold
+    ); // PopScope
   }
 
   // ---------------------------------------------------------------------------
@@ -663,7 +713,65 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildDiscovery() {
-    return DiscoveryScreen(onServerSelected: _connectTo);
+    final savedUrl = _savedServerUrl;
+    if (savedUrl == null) {
+      return DiscoveryScreen(onServerSelected: _connectTo);
+    }
+    return Column(
+      children: [
+        _buildResumeCard(savedUrl),
+        Expanded(child: DiscoveryScreen(onServerSelected: _connectTo)),
+      ],
+    );
+  }
+
+  /// Banner shown when a previous session's reconnect token is available.
+  Widget _buildResumeCard(String serverUrl) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      color: Colors.green.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.green.shade300),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.play_circle_filled,
+                color: Colors.green.shade700, size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '이전 게임이 진행 중이에요',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade800,
+                    ),
+                  ),
+                  Text(
+                    serverUrl.replaceFirst('ws://', '').replaceFirst('/ws', ''),
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.green.shade600),
+                  ),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade600,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => _connectTo(serverUrl),
+              child: const Text('이어하기'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildLobby() {

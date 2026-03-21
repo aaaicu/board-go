@@ -68,6 +68,18 @@ class PlayerIdentity {
     return prefs.getString(_keyReconnectToken);
   }
 
+  /// Returns the server URL of the last active session, or `null` if none.
+  ///
+  /// Used to show a "이어하기" option on app restart.
+  static Future<String?> loadLastServerUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final url = prefs.getString(_keyReconnectServerUrl);
+    // Only return the URL if a token also exists — URL without token is useless.
+    final token = prefs.getString(_keyReconnectToken);
+    if (url == null || token == null) return null;
+    return url;
+  }
+
   /// Removes the saved reconnect token (e.g. on deliberate disconnect or
   /// after the server session ends).
   static Future<void> clearReconnectToken() async {

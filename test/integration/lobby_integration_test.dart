@@ -124,24 +124,27 @@ void main() {
       await Future.wait([c1.close(), c2.close()]);
     });
 
-    test('reconnect flow: disconnect → reconnect with token → same playerId',
+    test(
+        'lobby reconnect: stale token is ignored → fresh join with supplied playerId',
         () async {
       final c1 = await _WsClient.connect(server.port!);
       c1.send(JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope());
 
       final ack = JoinRoomAckMessage.fromEnvelope(
           await c1.next(WsMessageType.joinRoomAck));
-      final token = ack.reconnectToken!;
+      final staleToken = ack.reconnectToken!;
 
       await c1.close();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      // Reconnect with the token from a new connection.
+      // Reconnect with stale token — lobby unregister clears the token,
+      // so this is treated as a fresh join with the supplied playerId.
       final c2 = await _WsClient.connect(server.port!);
       c2.send(
         JoinMessage.join(
-          playerId: 'some-other-id',
+          playerId: 'p1',
           displayName: 'Alice',
-          reconnectToken: token,
+          reconnectToken: staleToken,
         ).toEnvelope(),
       );
 
@@ -149,7 +152,8 @@ void main() {
           await c2.next(WsMessageType.joinRoomAck));
 
       expect(ack2.success, isTrue);
-      expect(ack2.playerId, equals('p1'));
+      expect(ack2.playerId, equals('p1'),
+          reason: 'fresh join uses the playerId from the message');
 
       await c2.close();
     });

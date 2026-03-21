@@ -96,11 +96,13 @@ class SessionManager {
 
   /// Removes the session for [playerId] and clears the ready state.
   ///
-  /// The reconnect token is intentionally preserved so the player can
-  /// reclaim the same seat after an unintended disconnect.
+  /// Also clears the reconnect token so that a returning player is treated
+  /// as a fresh join (prevents stale token → no-op reconnect bug in lobby).
   void unregister(String playerId) {
     _sessions.remove(playerId);
     _readyStates.remove(playerId);
+    final token = _reconnectTokenByPlayerId.remove(playerId);
+    if (token != null) _reconnectTokens.remove(token);
   }
 
   /// Marks [playerId] as disconnected without removing their seat.

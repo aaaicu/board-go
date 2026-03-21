@@ -78,8 +78,6 @@ class _GameboardScreenState extends State<GameboardScreen> {
   bool _isEmulatorIp = false;
   String? _error;
 
-  final Map<String, String> _players = {}; // playerId → displayName
-  StreamSubscription<PlayerEvent>? _eventSub;
   StreamSubscription<LobbyStateEvent>? _lobbySub;
   StreamSubscription<BoardViewEvent>? _boardViewSub;
   final _mdns = MdnsRegistrar();
@@ -107,7 +105,6 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
   @override
   void dispose() {
-    _eventSub?.cancel();
     _lobbySub?.cancel();
     _boardViewSub?.cancel();
     _handle?.stop();
@@ -128,21 +125,6 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
       // Advertise via mDNS fire-and-forget — don't block the UI on it.
       unawaited(_mdns.register(port: handle.port));
-
-      // Subscribe to player join/leave events from the server isolate.
-      final playerSub = handle.playerEvents.listen((event) {
-        if (!mounted) return;
-        setState(() {
-          if (event.joined) {
-            _players[event.playerId] = event.displayName;
-          } else if (!event.isTemporaryDisconnect) {
-            // Only remove the player on a deliberate LEAVE.
-            // Temporary disconnects preserve the seat; the offline badge is
-            // rendered via the lobbyState isConnected field.
-            _players.remove(event.playerId);
-          }
-        });
-      });
 
       // Subscribe to lobby state snapshots from the server isolate.
       final lobbySub = handle.lobbyStateEvents.listen((event) {
@@ -179,7 +161,6 @@ class _GameboardScreenState extends State<GameboardScreen> {
           _handle = handle;
           _localIp = ip;
           _isEmulatorIp = isEmulator;
-          _eventSub = playerSub;
           _lobbySub = lobbySub;
           _boardViewSub = boardViewSub;
         });
@@ -271,14 +252,14 @@ class _GameboardScreenState extends State<GameboardScreen> {
   /// Handles back navigation. If players are connected, shows a confirmation
   /// dialog before stopping the server and going back.
   Future<bool> _onWillPop() async {
-    if (_players.isEmpty) return true;
+    if (_lobbyState.players.isEmpty) return true;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('게임 종료'),
         content: Text(
-          '현재 ${_players.length}명이 접속 중입니다.\n'
+          '현재 ${_lobbyState.players.length}명이 접속 중입니다.\n'
           '뒤로 가면 모든 플레이어가 자동으로 메인 화면으로 이동합니다.\n\n'
           '계속하시겠습니까?',
         ),
@@ -303,10 +284,11 @@ class _GameboardScreenState extends State<GameboardScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final navigator = Navigator.of(context);
         final canLeave = await _onWillPop();
-        if (canLeave && context.mounted) {
+        if (canLeave && mounted) {
           await _handle?.stop();
-          Navigator.pop(context);
+          navigator.pop();
         }
       },
       child: Scaffold(
@@ -362,8 +344,8 @@ class _GameboardScreenState extends State<GameboardScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: ServerStatusWidget(
             port: handle.port,
-            playerCount: _players.length,
-            playerNames: _players.values.toList(),
+            playerCount: _lobbyState.players.length,
+            playerNames: _lobbyState.players.map((p) => p.nickname).toList(),
           ),
         ),
         // In-game: show the board view.
@@ -371,7 +353,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
           Expanded(
             child: GameBoardPlayScreen(
               boardView: _boardView!,
-              playerNames: Map<String, String>.from(_players),
+              playerNames: {
+                for (final p in _lobbyState.players) p.playerId: p.nickname
+              },
             ),
           )
         // Lobby: show the lobby screen.

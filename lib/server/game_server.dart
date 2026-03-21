@@ -717,30 +717,52 @@ class GameServer {
     if (_sessions.isConnected(playerId)) {
       final displayName = _sessions.displayName(playerId) ?? playerId;
 
-      // Mark offline; do NOT unregister (preserves seat + token).
-      _sessions.markDisconnected(playerId);
+      if (_sessionState.phase == SessionPhase.lobby) {
+        // Lobby: no game in progress — fully remove the player so the slot is
+        // freed immediately and the lobby list stays clean.
+        _sessions.unregister(playerId);
 
-      // Persist the current state so it survives server restarts.
-      if (_sessionState.phase == SessionPhase.inGame) {
+        // Notify the UI isolate — permanent removal.
+        eventPort?.send(PlayerEvent(
+          joined: false,
+          playerId: playerId,
+          displayName: displayName,
+          isTemporaryDisconnect: false,
+        ));
+
+        // Broadcast LEAVE so other clients remove the player from their lobby UI.
+        _sessions.broadcast(
+          jsonEncode(
+            WsMessage(
+              type: WsMessageType.leave,
+              payload: {'playerId': playerId},
+            ).toJson(),
+          ),
+        );
+      } else {
+        // In-game: preserve the seat so the player can reconnect via token.
+        _sessions.markDisconnected(playerId);
+
+        // Persist the current state so it survives server restarts.
         _store?.save(_sessionState).catchError((_) {});
+
+        // Notify the UI isolate — temporary disconnect, seat preserved.
+        eventPort?.send(PlayerEvent(
+          joined: false,
+          playerId: playerId,
+          displayName: displayName,
+          isTemporaryDisconnect: true,
+        ));
+
+        // Tell all clients about the disconnect.
+        _broadcastPlayerDisconnected(playerId, displayName);
+
+        // If this player was the active player, start the auto-skip timer.
+        _checkDisconnectedTurn();
       }
 
-      // Notify the UI isolate — temporary disconnect, seat preserved.
-      eventPort?.send(PlayerEvent(
-        joined: false,
-        playerId: playerId,
-        displayName: displayName,
-        isTemporaryDisconnect: true,
-      ));
-
-      // Tell all clients about the disconnect.
-      _broadcastPlayerDisconnected(playerId, displayName);
-
-      // Broadcast updated lobby state so other clients show the offline badge.
+      // Always refresh the lobby state for all remaining clients.
       _broadcastLobbyState();
-
-      // If this player was the active player, start the auto-skip timer.
-      _checkDisconnectedTurn();
     }
   }
 

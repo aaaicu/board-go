@@ -92,11 +92,12 @@ GameState _defaultState() => GameState(
 
 void main() {
 // ---------------------------------------------------------------------------
-// Test 1 & 1b: cleanUpOrphan → markDisconnected, seat preserved,
-//               PlayerEvent.isTemporaryDisconnect == true
+// Test 1: lobby cleanUpOrphan → unregister (seat removed), LEAVE broadcast,
+//          PlayerEvent.isTemporaryDisconnect == false
 // ---------------------------------------------------------------------------
 
-group('Test 1: cleanUpOrphan preserves seat and emits isTemporaryDisconnect', () {
+group('Test 1: lobby cleanUpOrphan removes seat and emits isTemporaryDisconnect=false',
+    () {
   late GameServer server;
 
   setUp(() async {
@@ -110,7 +111,8 @@ group('Test 1: cleanUpOrphan preserves seat and emits isTemporaryDisconnect', ()
 
   tearDown(() async => server.stop());
 
-  test('ungraceful disconnect marks player offline; seat is preserved in lobbyState',
+  test(
+      'ungraceful disconnect in lobby removes player from lobbyState entirely',
       () async {
     final c1 = await _WsClient.connect(server.port!);
     final c2 = await _WsClient.connect(server.port!);
@@ -121,27 +123,24 @@ group('Test 1: cleanUpOrphan preserves seat and emits isTemporaryDisconnect', ()
     await c2.next(WsMessageType.joinRoomAck);
 
     // Arm listener BEFORE closing c1.
-    final offlineFuture = c2.messages.firstWhere((m) {
+    final removedFuture = c2.messages.firstWhere((m) {
       if (m.type != WsMessageType.lobbyState) return false;
       final lobby = LobbyStateMessage.fromEnvelope(m);
-      return lobby.players.any((p) => p.playerId == 'p1' && !p.isConnected);
+      return !lobby.players.any((p) => p.playerId == 'p1');
     }).timeout(const Duration(seconds: 5));
 
     await c1.close();
 
-    final lobbyMsg = await offlineFuture;
+    final lobbyMsg = await removedFuture;
     final lobby = LobbyStateMessage.fromEnvelope(lobbyMsg);
-    final p1 = lobby.players.firstWhere((p) => p.playerId == 'p1');
 
-    expect(p1.isConnected, isFalse,
-        reason: 'player must be marked offline after ungraceful disconnect');
-    expect(lobby.players.any((p) => p.playerId == 'p1'), isTrue,
-        reason: 'seat must be preserved (not removed) on ungraceful disconnect');
+    expect(lobby.players.any((p) => p.playerId == 'p1'), isFalse,
+        reason: 'lobby seat must be removed on ungraceful disconnect in lobby');
 
     await c2.close();
   });
 
-  test('PLAYER_DISCONNECTED is broadcast to other connected clients', () async {
+  test('LEAVE is broadcast to other clients on lobby disconnect', () async {
     final c1 = await _WsClient.connect(server.port!);
     final c2 = await _WsClient.connect(server.port!);
 
@@ -152,20 +151,20 @@ group('Test 1: cleanUpOrphan preserves seat and emits isTemporaryDisconnect', ()
     await c1.next(WsMessageType.joinRoomAck);
     await c2.next(WsMessageType.joinRoomAck);
 
-    final disconnectedFuture = c2.messages
-        .firstWhere((m) => m.type == WsMessageType.playerDisconnected)
+    final leaveFuture = c2.messages
+        .firstWhere((m) => m.type == WsMessageType.leave)
         .timeout(const Duration(seconds: 5));
 
     await c1.close();
 
-    final msg = await disconnectedFuture;
+    final msg = await leaveFuture;
     expect(msg.payload['playerId'], equals('dropper'));
-    expect(msg.payload['nickname'], equals('Dropper'));
 
     await c2.close();
   });
 
-  test('PlayerEvent with isTemporaryDisconnect=true is emitted on ungraceful disconnect',
+  test(
+      'PlayerEvent with isTemporaryDisconnect=false is emitted on lobby ungraceful disconnect',
       () async {
     final events = <PlayerEvent>[];
     final eventPort = ReceivePort();
@@ -199,8 +198,8 @@ group('Test 1: cleanUpOrphan preserves seat and emits isTemporaryDisconnect', ()
 
     expect(events.length, equals(1));
     expect(events.first.joined, isFalse);
-    expect(events.first.isTemporaryDisconnect, isTrue,
-        reason: 'ungraceful disconnect must emit isTemporaryDisconnect=true');
+    expect(events.first.isTemporaryDisconnect, isFalse,
+        reason: 'lobby ungraceful disconnect must emit isTemporaryDisconnect=false');
   });
 });
 
@@ -287,7 +286,9 @@ group('Tests 2-4: auto-skip timer and reconnect cancellation', () {
 
   tearDown(() async => server.stop());
 
-  test('2. reconnect token is valid after ungraceful disconnect', () async {
+  test(
+      '2. lobby disconnect clears token — reconnect with stale token joins fresh',
+      () async {
     server = GameServer(gamePack: _NoOpGamePack());
     await server.start(
       host: 'localhost',
@@ -299,24 +300,30 @@ group('Tests 2-4: auto-skip timer and reconnect cancellation', () {
     c1.send(JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope());
     final ack1 = JoinRoomAckMessage.fromEnvelope(
         await c1.next(WsMessageType.joinRoomAck));
-    final token = ack1.reconnectToken!;
+    final staleToken = ack1.reconnectToken!;
 
+    // Ungraceful close in lobby → unregister() clears the token.
     await c1.close();
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
-    // Reconnect with token — must succeed and restore original playerId.
+    // Reconnect with stale token — token is invalid in lobby, so
+    // the server treats this as a fresh join using the supplied playerId.
     final c1b = await _WsClient.connect(server.port!);
     c1b.send(JoinMessage.join(
-      playerId: 'different-device',
+      playerId: 'p1',
       displayName: 'Alice',
-      reconnectToken: token,
+      reconnectToken: staleToken,
     ).toEnvelope());
     final ack2 = JoinRoomAckMessage.fromEnvelope(
         await c1b.next(WsMessageType.joinRoomAck));
 
     expect(ack2.success, isTrue);
     expect(ack2.playerId, equals('p1'),
-        reason: 'reconnect must restore the original playerId');
+        reason: 'fresh join uses the playerId from the message');
+    expect(ack2.reconnectToken, isNotNull,
+        reason: 'a new token is issued for the fresh session');
+    expect(ack2.reconnectToken, isNot(equals(staleToken)),
+        reason: 'new token must differ from the stale one');
 
     await c1b.close();
   });

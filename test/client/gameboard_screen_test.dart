@@ -126,7 +126,8 @@ void main() {
       expect(find.textContaining('12345'), findsWidgets);
     });
 
-    testWidgets('player name appears when join event received', (tester) async {
+    testWidgets('player name appears when lobby state event received',
+        (tester) async {
       late _FakeHandle handle;
       await tester.runAsync(() async {
         handle = _FakeHandle();
@@ -136,19 +137,22 @@ void main() {
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 200));
-        handle.events.add(const PlayerEvent(
-          joined: true,
-          playerId: 'p1',
-          displayName: 'Alice',
+        handle.lobbyEvents.add(LobbyStateEvent(
+          players: [
+            {'playerId': 'p1', 'nickname': 'Alice', 'isReady': false, 'isConnected': true},
+          ],
+          canStart: false,
         ));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pump();
 
-      expect(find.text('Alice'), findsOneWidget);
+      // Alice may appear in multiple widgets (status bar + lobby list).
+      expect(find.text('Alice'), findsWidgets);
     });
 
-    testWidgets('player name removed when leave event received', (tester) async {
+    testWidgets('player name removed when lobby state event shows no players',
+        (tester) async {
       late _FakeHandle handle;
       await tester.runAsync(() async {
         handle = _FakeHandle();
@@ -158,22 +162,19 @@ void main() {
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 200));
-        handle.events.add(const PlayerEvent(
-          joined: true,
-          playerId: 'p1',
-          displayName: 'Alice',
+        handle.lobbyEvents.add(LobbyStateEvent(
+          players: [
+            {'playerId': 'p1', 'nickname': 'Alice', 'isReady': false, 'isConnected': true},
+          ],
+          canStart: false,
         ));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pump();
-      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Alice'), findsWidgets);
 
       await tester.runAsync(() async {
-        handle.events.add(const PlayerEvent(
-          joined: false,
-          playerId: 'p1',
-          displayName: 'Alice',
-        ));
+        handle.lobbyEvents.add(const LobbyStateEvent(players: [], canStart: false));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pump();
@@ -191,15 +192,12 @@ void main() {
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 200));
-        handle.events.add(const PlayerEvent(
-          joined: true,
-          playerId: 'p1',
-          displayName: 'Player',
-        ));
-        handle.events.add(const PlayerEvent(
-          joined: true,
-          playerId: 'p2',
-          displayName: 'Player',
+        handle.lobbyEvents.add(LobbyStateEvent(
+          players: [
+            {'playerId': 'p1', 'nickname': 'Player', 'isReady': false, 'isConnected': true},
+            {'playerId': 'p2', 'nickname': 'Player', 'isReady': false, 'isConnected': true},
+          ],
+          canStart: false,
         ));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
@@ -220,15 +218,12 @@ void main() {
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 200));
-        handle.events.add(const PlayerEvent(
-          joined: true,
-          playerId: 'p1',
-          displayName: 'Player',
-        ));
-        handle.events.add(const PlayerEvent(
-          joined: true,
-          playerId: 'p2',
-          displayName: 'Player',
+        handle.lobbyEvents.add(LobbyStateEvent(
+          players: [
+            {'playerId': 'p1', 'nickname': 'Player', 'isReady': false, 'isConnected': true},
+            {'playerId': 'p2', 'nickname': 'Player', 'isReady': false, 'isConnected': true},
+          ],
+          canStart: false,
         ));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
@@ -236,11 +231,12 @@ void main() {
       // 2 players connected
 
       await tester.runAsync(() async {
-        // p1 leaves
-        handle.events.add(const PlayerEvent(
-          joined: false,
-          playerId: 'p1',
-          displayName: 'Player',
+        // p1 leaves — only p2 remains
+        handle.lobbyEvents.add(LobbyStateEvent(
+          players: [
+            {'playerId': 'p2', 'nickname': 'Player', 'isReady': false, 'isConnected': true},
+          ],
+          canStart: false,
         ));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });

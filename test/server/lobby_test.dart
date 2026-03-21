@@ -373,7 +373,8 @@ void main() {
       await Future.wait([client1.close(), client2.close()]);
     });
 
-    test('reconnectToken re-join → same playerId restored', () async {
+    test('lobby reconnect with stale token → fresh join with supplied playerId',
+        () async {
       // First connection — obtain the reconnect token.
       final client1 = await _WsClient.connect(server.port!);
 
@@ -381,25 +382,28 @@ void main() {
           JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope());
 
       final ack = await client1.nextMessage(WsMessageType.joinRoomAck);
-      final token = JoinRoomAckMessage.fromEnvelope(ack).reconnectToken!;
+      final staleToken = JoinRoomAckMessage.fromEnvelope(ack).reconnectToken!;
 
       await client1.close();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      // Reconnect with the token — the playerId in the JOIN is irrelevant.
+      // Reconnect with stale token — token is cleared in lobby on unregister,
+      // so the server treats this as a fresh join using the supplied playerId.
       final client2 = await _WsClient.connect(server.port!);
 
       client2.send(
         JoinMessage.join(
-          playerId: 'ignored-id',
+          playerId: 'p1',
           displayName: 'Alice',
-          reconnectToken: token,
+          reconnectToken: staleToken,
         ).toEnvelope(),
       );
 
       final ack2 = await client2.nextMessage(WsMessageType.joinRoomAck);
       final parsed = JoinRoomAckMessage.fromEnvelope(ack2);
       expect(parsed.success, isTrue);
-      expect(parsed.playerId, equals('p1'));
+      expect(parsed.playerId, equals('p1'),
+          reason: 'fresh join uses the playerId from the message');
 
       await client2.close();
     });

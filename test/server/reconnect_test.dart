@@ -190,7 +190,8 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('player disconnect marks them as offline; lobby shows isConnected=false',
+    test(
+        'lobby disconnect removes player from lobby (seat not preserved)',
         () async {
       final c1 = await _WsClient.connect(server.port!);
       final c2 = await _WsClient.connect(server.port!);
@@ -201,27 +202,26 @@ void main() {
       await c1.next(WsMessageType.joinRoomAck);
       await c2.next(WsMessageType.joinRoomAck);
 
-      // Arm listener on c2 for the disconnect event BEFORE closing c1.
-      final offlineFuture = c2.messages.firstWhere((m) {
+      // Arm listener on c2 for the lobby update showing p1 removed.
+      final removedFuture = c2.messages.firstWhere((m) {
         if (m.type != WsMessageType.lobbyState) return false;
         final lobby = LobbyStateMessage.fromEnvelope(m);
-        final p1 = lobby.players.where((p) => p.playerId == 'p1');
-        return p1.isNotEmpty && !p1.first.isConnected;
+        return !lobby.players.any((p) => p.playerId == 'p1');
       }).timeout(const Duration(seconds: 5));
 
       // Ungraceful disconnect (no LEAVE message — just close the socket).
       await c1.close();
 
-      final lobbyMsg = await offlineFuture;
+      final lobbyMsg = await removedFuture;
       final lobby = LobbyStateMessage.fromEnvelope(lobbyMsg);
-      final p1Info = lobby.players.firstWhere((p) => p.playerId == 'p1');
-      expect(p1Info.isConnected, isFalse);
+      expect(lobby.players.any((p) => p.playerId == 'p1'), isFalse,
+          reason: 'lobby disconnect must remove the seat entirely');
 
       await c2.close();
     });
 
     test(
-        'reconnect with valid token → JOIN_ROOM_ACK success with same playerId',
+        'lobby reconnect with stale token → fresh join using supplied playerId',
         () async {
       // Initial connection.
       final c1 = await _WsClient.connect(server.port!);
@@ -229,19 +229,20 @@ void main() {
           JoinMessage.join(playerId: 'p1', displayName: 'Alice').toEnvelope());
       final ack1 = JoinRoomAckMessage.fromEnvelope(
           await c1.next(WsMessageType.joinRoomAck));
-      final token = ack1.reconnectToken!;
+      final staleToken = ack1.reconnectToken!;
       await c1.close();
 
       // Wait briefly for server to process the disconnect.
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      // Reconnect with the saved token.
+      // Reconnect with stale token — in lobby the token is cleared,
+      // so the server treats this as a fresh join with the supplied playerId.
       final c2 = await _WsClient.connect(server.port!);
       c2.send(
         JoinMessage.join(
-          playerId: 'different-device-id',
+          playerId: 'p1',
           displayName: 'Alice',
-          reconnectToken: token,
+          reconnectToken: staleToken,
         ).toEnvelope(),
       );
 
@@ -250,9 +251,9 @@ void main() {
 
       expect(ack2.success, isTrue);
       expect(ack2.playerId, equals('p1'),
-          reason: 'reconnect must restore the original playerId');
-      expect(ack2.reconnectToken, equals(token),
-          reason: 'reconnect token must remain the same');
+          reason: 'fresh join uses the playerId from the message');
+      expect(ack2.reconnectToken, isNotNull,
+          reason: 'new token is issued on fresh join');
 
       await c2.close();
     });
