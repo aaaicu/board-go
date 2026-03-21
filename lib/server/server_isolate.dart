@@ -15,10 +15,18 @@ class PlayerEvent {
   final String playerId;
   final String displayName;
 
+  /// When [joined] is false, indicates whether this is a temporary network
+  /// disconnect (true) or a deliberate LEAVE (false).
+  ///
+  /// The GameBoard UI should preserve the player's entry in its player map for
+  /// temporary disconnects and remove it only on a deliberate leave.
+  final bool isTemporaryDisconnect;
+
   const PlayerEvent({
     required this.joined,
     required this.playerId,
     required this.displayName,
+    this.isTemporaryDisconnect = false,
   });
 }
 
@@ -85,6 +93,12 @@ class _StartGameCommand extends _ServerCommand {
   _StartGameCommand({required this.replyPort, required this.packId});
 }
 
+/// Signals the server isolate to reset the game back to the lobby phase.
+class _ResetGameCommand extends _ServerCommand {
+  final SendPort replyPort;
+  _ResetGameCommand({required this.replyPort});
+}
+
 class _ServerStarted {
   final int port;
   _ServerStarted(this.port);
@@ -127,6 +141,9 @@ void _serverIsolateEntry(_IsolateConfig config) {
     } else if (message is _StartGameCommand) {
       server.startGame(packId: message.packId);
       message.replyPort.send(null);
+    } else if (message is _ResetGameCommand) {
+      server.resetGame();
+      message.replyPort.send(null);
     } else if (message is _StopServerCommand) {
       await server.stop();
       message.replyPort.send(null);
@@ -161,6 +178,9 @@ abstract class ServerHandle {
   /// [packId] selects which game-pack rules to activate.
   /// Defaults to `'simple_card_battle'`.
   Future<void> startGame({String packId = 'simple_card_battle'});
+
+  /// Resets the game back to the lobby phase.
+  Future<void> resetGame();
 
   Future<void> stop();
 }
@@ -200,6 +220,14 @@ class ServerIsolateHandle implements ServerHandle {
   Future<void> startGame({String packId = 'simple_card_battle'}) async {
     final reply = ReceivePort();
     _commandPort.send(_StartGameCommand(replyPort: reply.sendPort, packId: packId));
+    await reply.first;
+    reply.close();
+  }
+
+  @override
+  Future<void> resetGame() async {
+    final reply = ReceivePort();
+    _commandPort.send(_ResetGameCommand(replyPort: reply.sendPort));
     await reply.first;
     reply.close();
   }

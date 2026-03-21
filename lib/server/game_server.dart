@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -18,6 +20,7 @@ import '../shared/game_session/game_log_entry.dart';
 import '../shared/game_session/player_session_state.dart';
 import '../shared/game_session/session_phase.dart';
 import '../shared/messages/action_message.dart';
+import '../shared/messages/node_message.dart';
 import '../shared/messages/action_rejected_message.dart';
 import '../shared/messages/board_view_message.dart';
 import '../shared/messages/join_message.dart';
@@ -92,11 +95,39 @@ class GameServer {
   /// Used to reject duplicate actions (idempotency).
   final ProcessedActionsCache _processedActions = ProcessedActionsCache();
 
+  // ---------------------------------------------------------------------------
+  // Zombie-connection detection (server-side heartbeat)
+  // ---------------------------------------------------------------------------
+
+  /// Tracks the last time a message was received from each sink.
+  final Map<SessionSink, DateTime> _lastSeen = {};
+
+  /// Periodic timer that closes stale connections where [_lastSeen] exceeds
+  /// [_kZombieThreshold].
+  Timer? _heartbeatTimer;
+
+  static const _kZombieThreshold = Duration(seconds: 45);
+  static const _kHeartbeatCheckInterval = Duration(seconds: 20);
+
+  // ---------------------------------------------------------------------------
+  // Offline-player turn auto-skip
+  // ---------------------------------------------------------------------------
+
+  static const _kDisconnectedTurnTimeout = Duration(seconds: 60);
+  Timer? _disconnectedTurnTimer;
+
+  /// Override for the offline-turn auto-skip timeout.
+  ///
+  /// Provided for testing only — production code uses [_kDisconnectedTurnTimeout].
+  final Duration? _disconnectedTurnTimeoutOverride;
+
   GameServer({
     required this.gamePack,
     this.eventPort,
     GameStateStore? store,
-  }) : _store = store;
+    Duration? disconnectedTurnTimeoutOverride,
+  })  : _store = store,
+        _disconnectedTurnTimeoutOverride = disconnectedTurnTimeoutOverride;
 
   int? get port => _httpServer?.port;
   bool get isRunning => _httpServer != null;
@@ -117,9 +148,19 @@ class GameServer {
       host,
       port,
     );
+
+    // Start the server-side zombie-connection detection timer.
+    _heartbeatTimer = Timer.periodic(
+      _kHeartbeatCheckInterval,
+      (_) => _checkZombieConnections(),
+    );
   }
 
   Future<void> stop() async {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _disconnectedTurnTimer?.cancel();
+    _disconnectedTurnTimer = null;
     await gamePack.dispose();
     await _httpServer?.close(force: true);
     _httpServer = null;
@@ -142,6 +183,42 @@ class GameServer {
       default:
         return const SimpleCardGameRules();
     }
+  }
+
+  /// Resets the session back to the lobby phase.
+  ///
+  /// Clears all game state, resets every player's ready flag, broadcasts a
+  /// [WsMessageType.gameReset] to all connected clients so they can transition
+  /// back to the lobby screen, then broadcasts the refreshed lobby state.
+  ///
+  /// Called by the server isolate when it receives a [_ResetGameCommand].
+  void resetGame() {
+    if (_sessionState.phase == SessionPhase.lobby) return;
+
+    // Reset each player's ready state so the lobby starts fresh.
+    for (final playerId in _sessions.playerIds) {
+      _sessions.setReady(playerId, false);
+    }
+
+    // Wipe game-specific session state back to an empty lobby.
+    _sessionState = GameSessionState(
+      sessionId: 'default',
+      phase: SessionPhase.lobby,
+      players: const {},
+      playerOrder: const [],
+      version: 0,
+      log: const [],
+    );
+
+    // Tell every connected GameNode to return to the lobby screen.
+    _sessions.broadcast(
+      jsonEncode(
+        WsMessage(type: WsMessageType.gameReset, payload: {}).toJson(),
+      ),
+    );
+
+    // Send a fresh lobby snapshot so GameNode lobby screens update immediately.
+    _broadcastLobbyState();
   }
 
   /// Transitions the session from lobby to in-game.
@@ -205,6 +282,9 @@ class GameServer {
   final Map<SessionSink, String> _sinkToPlayer = {};
 
   void _handleMessage(String raw, SessionSink sink) {
+    // Update last-seen timestamp for zombie detection.
+    _lastSeen[sink] = DateTime.now();
+
     late WsMessage msg;
     try {
       msg = WsMessage.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -224,6 +304,8 @@ class GameServer {
         _handleSetReady(SetReadyMessage.fromEnvelope(msg));
       case WsMessageType.ping:
         _handlePing(PingMessage.fromEnvelope(msg), sink);
+      case WsMessageType.nodeMessage:
+        _handleNodeMessage(NodeMessage.fromEnvelope(msg));
       default:
         _sendError(sink, 'Unexpected message type: ${msg.type}');
     }
@@ -293,14 +375,28 @@ class GameServer {
       }
     }
 
-    // On reconnect during an active game, immediately re-send the player view.
+    // On reconnect during an active game, cancel any pending auto-skip timer
+    // for this player's turn and immediately re-send the full game view.
     if (isReconnect && _sessionState.phase == SessionPhase.inGame) {
+      // If this player was the active player with a pending auto-skip, cancel it.
+      final turnState = _sessionState.turnState;
+      if (turnState?.activePlayerId == resolvedPlayerId) {
+        _disconnectedTurnTimer?.cancel();
+        _disconnectedTurnTimer = null;
+      }
+
       final playerView =
           _gamePackRules.buildPlayerView(_sessionState, resolvedPlayerId);
       _sessions.sendToPlayer(
         resolvedPlayerId,
         PlayerViewMessage(playerView: playerView).toEnvelope().toJson(),
       );
+
+      // Also re-send the board view so the reconnecting client is fully in sync.
+      final boardView = _gamePackRules.buildBoardView(_sessionState);
+      sink.add(jsonEncode(
+        BoardViewMessage(boardView: boardView).toEnvelope().toJson(),
+      ));
     }
 
     // Broadcast updated lobby state to all players (including the new one).
@@ -313,11 +409,12 @@ class GameServer {
     _sessions.unregister(leave.playerId);
     _sinkToPlayer.removeWhere((_, id) => id == leave.playerId);
 
-    // Notify the UI isolate.
+    // Notify the UI isolate — deliberate LEAVE, not a temporary disconnect.
     eventPort?.send(PlayerEvent(
       joined: false,
       playerId: leave.playerId,
       displayName: displayName,
+      isTemporaryDisconnect: false,
     ));
 
     _sessions.broadcast(
@@ -344,6 +441,35 @@ class GameServer {
     sink.add(
       jsonEncode(PongMessage(timestamp: ping.timestamp).toEnvelope().toJson()),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Node-to-node message routing
+  // ---------------------------------------------------------------------------
+
+  /// Routes a [NodeMessage] from one GameNode to another (or broadcasts it).
+  ///
+  /// Processing steps:
+  ///   1. Sender must be a registered player — prevents spoofed messages.
+  ///   2. The active [GamePackRules.onNodeMessage] hook may block or transform
+  ///      the message.  Returning `null` silently drops the message.
+  ///   3. Routing: unicast to [NodeMessage.toPlayerId] when specified,
+  ///      broadcast to all connected players otherwise.
+  void _handleNodeMessage(NodeMessage msg) {
+    // 1. Sender validation.
+    if (!_sessions.playerIds.contains(msg.fromPlayerId)) return;
+
+    // 2. GamePack hook — null return blocks delivery.
+    final routed = _gamePackRules.onNodeMessage(msg, _sessionState);
+    if (routed == null) return;
+
+    // 3. Routing.
+    final envelope = jsonEncode(routed.toEnvelope().toJson());
+    if (routed.toPlayerId == null) {
+      _sessions.broadcast(envelope);
+    } else {
+      _sessions.send(routed.toPlayerId!, envelope);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -528,6 +654,10 @@ class GameServer {
         PlayerViewMessage(playerView: playerView).toEnvelope().toJson(),
       );
     }
+
+    // After every state broadcast, check if the active player is offline and
+    // start (or maintain) the auto-skip timer.
+    _checkDisconnectedTurn();
   }
 
   /// Broadcasts the current lobby state to all connected players and notifies
@@ -577,7 +707,10 @@ class GameServer {
 
   /// Sprint 3: ungraceful disconnect — mark the player as offline rather than
   /// removing them so they can reclaim their seat via reconnect token.
+  ///
+  /// No auto-eviction timer is started; the seat is preserved until game end.
   void _cleanUpOrphan(SessionSink sink) {
+    _lastSeen.remove(sink);
     final playerId = _sinkToPlayer.remove(sink);
     if (playerId == null) return;
 
@@ -592,15 +725,148 @@ class GameServer {
         _store?.save(_sessionState).catchError((_) {});
       }
 
-      // Notify the UI isolate.
+      // Notify the UI isolate — temporary disconnect, seat preserved.
       eventPort?.send(PlayerEvent(
         joined: false,
         playerId: playerId,
         displayName: displayName,
+        isTemporaryDisconnect: true,
       ));
+
+      // Tell all clients about the disconnect.
+      _broadcastPlayerDisconnected(playerId, displayName);
 
       // Broadcast updated lobby state so other clients show the offline badge.
       _broadcastLobbyState();
+
+      // If this player was the active player, start the auto-skip timer.
+      _checkDisconnectedTurn();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zombie-connection detection
+  // ---------------------------------------------------------------------------
+
+  void _checkZombieConnections() {
+    final now = DateTime.now();
+    final stale = _lastSeen.entries
+        .where((e) => now.difference(e.value) > _kZombieThreshold)
+        .map((e) => e.key)
+        .toList();
+    for (final sink in stale) {
+      // Closing the sink triggers onDone → _cleanUpOrphan.
+      sink.close();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offline-player turn auto-skip
+  // ---------------------------------------------------------------------------
+
+  void _checkDisconnectedTurn() {
+    if (_sessionState.phase != SessionPhase.inGame) return;
+    final activeId = _sessionState.turnState?.activePlayerId;
+    if (activeId == null) return;
+
+    if (_sessions.isConnected(activeId)) {
+      // Active player is online — cancel any pending timer.
+      _disconnectedTurnTimer?.cancel();
+      _disconnectedTurnTimer = null;
+      return;
+    }
+
+    // Active player is offline and no timer is running yet — start one.
+    if (_disconnectedTurnTimer == null) {
+      _broadcastTurnAutoSkipWarning(activeId);
+      final timeout =
+          _disconnectedTurnTimeoutOverride ?? _kDisconnectedTurnTimeout;
+      _disconnectedTurnTimer = Timer(timeout, () {
+        _autoSkipDisconnectedTurn(activeId);
+      });
+    }
+  }
+
+  void _autoSkipDisconnectedTurn(String playerId) {
+    _disconnectedTurnTimer = null;
+
+    // Guard: phase may have changed while the timer was pending.
+    if (_sessionState.phase != SessionPhase.inGame) return;
+    if (_sessionState.turnState?.activePlayerId != playerId) return;
+    if (_sessions.isConnected(playerId)) return;
+
+    final autoAction = PlayerAction(
+      playerId: playerId,
+      type: 'END_TURN',
+      data: const {'auto': true, 'reason': 'disconnected'},
+    );
+    _sessionState = _gamePackRules.applyAction(_sessionState, playerId, autoAction);
+    _sessionState = _sessionState.addLog(GameLogEntry(
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      eventType: 'AUTO_SKIP',
+      description:
+          '${_sessions.displayName(playerId) ?? playerId} 자동 스킵 (오프라인)',
+    ));
+
+    // _broadcastViews() calls _checkDisconnectedTurn() again, which handles
+    // the case where the next active player is also offline.
+    _broadcastViews();
+  }
+
+  // ---------------------------------------------------------------------------
+  // New broadcast helpers
+  // ---------------------------------------------------------------------------
+
+  void _broadcastPlayerDisconnected(String playerId, String nickname) {
+    _sessions.broadcast(jsonEncode(WsMessage(
+      type: WsMessageType.playerDisconnected,
+      payload: {
+        'playerId': playerId,
+        'nickname': nickname,
+      },
+    ).toJson()));
+  }
+
+  void _broadcastTurnAutoSkipWarning(String playerId) {
+    _sessions.broadcast(jsonEncode(WsMessage(
+      type: WsMessageType.turnAutoSkipWarning,
+      payload: {
+        'playerId': playerId,
+        'nickname': _sessions.displayName(playerId) ?? playerId,
+        'skipInSeconds': _kDisconnectedTurnTimeout.inSeconds,
+      },
+    ).toJson()));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test-only helpers
+  //
+  // These methods are package-private (no leading underscore) so that unit
+  // tests can drive the server without a real WebSocket connection.  They must
+  // NOT be called from production code.
+  // ---------------------------------------------------------------------------
+
+  /// Registers a player directly into the session manager.
+  ///
+  /// Allows tests to set up a connected player without going through the full
+  /// WebSocket JOIN handshake.
+  void injectSessionForTest(
+    String playerId,
+    String displayName,
+    SessionSink sink,
+  ) {
+    _sessions.register(
+      playerId: playerId,
+      displayName: displayName,
+      sink: sink,
+    );
+    _sinkToPlayer[sink] = playerId;
+  }
+
+  /// Feeds a raw JSON string into [_handleMessage] as if it arrived from [sink].
+  ///
+  /// Allows tests to send arbitrary messages without a real WebSocket.
+  void handleMessageForTest(String raw, SessionSink sink) {
+    _handleMessage(raw, sink);
   }
 }

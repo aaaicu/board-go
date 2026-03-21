@@ -15,7 +15,13 @@ enum WsMessageType {
   playerView,
   boardView,
   actionRejected,
-  startGame;
+  startGame,
+  gameReset,
+  // Disconnect handling additions
+  playerDisconnected,
+  turnAutoSkipWarning,
+  // Node-to-node messaging (Sprint 6)
+  nodeMessage;
 
   String toJson() => switch (this) {
         WsMessageType.action => 'ACTION',
@@ -32,6 +38,10 @@ enum WsMessageType {
         WsMessageType.boardView => 'BOARD_VIEW',
         WsMessageType.actionRejected => 'ACTION_REJECTED',
         WsMessageType.startGame => 'START_GAME',
+        WsMessageType.gameReset => 'GAME_RESET',
+        WsMessageType.playerDisconnected => 'PLAYER_DISCONNECTED',
+        WsMessageType.turnAutoSkipWarning => 'TURN_AUTO_SKIP_WARNING',
+        WsMessageType.nodeMessage => 'NODE_MESSAGE',
       };
 
   static WsMessageType fromJson(String value) => switch (value) {
@@ -49,6 +59,10 @@ enum WsMessageType {
         'BOARD_VIEW' => WsMessageType.boardView,
         'ACTION_REJECTED' => WsMessageType.actionRejected,
         'START_GAME' => WsMessageType.startGame,
+        'GAME_RESET' => WsMessageType.gameReset,
+        'PLAYER_DISCONNECTED' => WsMessageType.playerDisconnected,
+        'TURN_AUTO_SKIP_WARNING' => WsMessageType.turnAutoSkipWarning,
+        'NODE_MESSAGE' => WsMessageType.nodeMessage,
         _ => throw FormatException('Unknown WsMessageType: $value'),
       };
 }

@@ -97,10 +97,11 @@ class WsClient {
     required this.uri,
     this.onConnectionStateChange,
     this.reconnectToken,
-    this.pingInterval = const Duration(seconds: 30),
-    this.pongTimeout = const Duration(seconds: 10),
+    this.pingInterval = const Duration(seconds: 15),
+    this.pongTimeout = const Duration(seconds: 8),
     this.reconnectBaseDelay = const Duration(seconds: 2),
-    this.maxReconnectAttempts = 5,
+    // 0 means unlimited reconnect attempts.
+    this.maxReconnectAttempts = 0,
   });
 
   bool get isConnected => _connected;
@@ -243,15 +244,20 @@ class WsClient {
   }
 
   Future<void> _scheduleReconnect() async {
-    if (_reconnectAttempts >= maxReconnectAttempts) {
+    // maxReconnectAttempts <= 0 means unlimited.
+    if (maxReconnectAttempts > 0 && _reconnectAttempts >= maxReconnectAttempts) {
       // Gave up — remain in disconnected state.
       return;
     }
 
     _emit(WsConnectionState.reconnecting);
 
-    final exponent = math.min(_reconnectAttempts, 6); // cap at 2^6 = 64
-    final delay = reconnectBaseDelay * math.pow(2, exponent).toInt();
+    // Cap the exponential backoff at 30 seconds.
+    final exponent = math.min(_reconnectAttempts, 4); // 2^4 * base = 16 * 2s = 32s, capped
+    final rawDelay = reconnectBaseDelay * math.pow(2, exponent).toInt();
+    final delay = rawDelay > const Duration(seconds: 30)
+        ? const Duration(seconds: 30)
+        : rawDelay;
     _reconnectAttempts++;
 
     await Future<void>.delayed(delay);

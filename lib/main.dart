@@ -1,9 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'client/gameboard/gameboard_screen.dart';
 import 'client/gamenode/gamenode_screen.dart';
 
 void main() {
+  if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
   runApp(const BoardGoApp());
 }
 

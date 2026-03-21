@@ -15,7 +15,9 @@ import '../../shared/messages/lobby_state_message.dart';
 import '../../shared/messages/player_view_message.dart';
 import '../../shared/messages/set_ready_message.dart';
 import '../../shared/messages/state_update_message.dart';
+import '../../shared/messages/node_message.dart';
 import '../../shared/messages/ws_message.dart';
+import '../../shared/game_pack/packs/simple_card_game_emotes.dart';
 import 'allowed_actions_widget.dart';
 import 'discovery_screen.dart';
 import 'game_over_widget.dart';
@@ -50,6 +52,10 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   _NodePhase _phase = _NodePhase.discovery;
   bool _disposing = false;
 
+  /// The WebSocket URL of the currently connected server.
+  /// Stored so auto-reconnect can re-use the same URL.
+  String? _wsUrl;
+
   /// Set after a successful JOIN_ROOM_ACK.
   String? _assignedPlayerId;
   String? _reconnectToken;
@@ -78,6 +84,30 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
   WsConnectionState _connState = WsConnectionState.connected;
   int _reconnectAttempts = 0;
+
+  // ---------------------------------------------------------------------------
+  // Disconnect handling state
+  // ---------------------------------------------------------------------------
+
+  /// Non-null when a TURN_AUTO_SKIP_WARNING has been received and the warning
+  /// banner should be displayed to all players.
+  Map<String, dynamic>? _autoSkipWarning;
+
+  // ---------------------------------------------------------------------------
+  // Node-to-node messaging state
+  // ---------------------------------------------------------------------------
+
+  /// Ring-buffer of the most recently received [NodeMessage]s (newest first).
+  ///
+  /// Capped at 10 entries to bound memory usage.  The UI uses this list to
+  /// render transient emote overlays.
+  final List<NodeMessage> _receivedNodeMessages = [];
+
+  /// Currently visible emote overlays.  Each entry is auto-removed after 2 s.
+  final List<({String emoji, String fromNickname})> _emoteOverlays = [];
+
+  /// Currently visible chat overlays.  Each entry is auto-removed after 3 s.
+  final List<({String text, String fromNickname})> _chatOverlays = [];
 
   // ---------------------------------------------------------------------------
   // Action pending guard
@@ -162,6 +192,9 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   Future<void> _connectTo(String wsUrl) async {
     final identity = _identity;
     if (identity == null) return;
+
+    // Persist URL for reconnect reference.
+    _wsUrl = wsUrl;
 
     // Dispose of any prior client before creating a new one.
     await _connStateSub?.cancel();
@@ -285,14 +318,81 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           if (_phase == _NodePhase.lobby) _phase = _NodePhase.inGame;
           // Server has processed our action and replied — unblock the UI.
           _actionPending = false;
+          // A new PLAYER_VIEW means a new turn has started; clear the warning.
+          _autoSkipWarning = null;
         });
 
       // BOARD_VIEW is for the GameBoard (iPad); GameNode ignores it.
       case WsMessageType.boardView:
         break;
 
+      case WsMessageType.gameReset:
+        setState(() {
+          _phase = _NodePhase.lobby;
+          _playerView = null;
+          _gameState = null;
+          _isReady = false;
+          _actionPending = false;
+          _autoSkipWarning = null;
+        });
+
+      case WsMessageType.playerDisconnected:
+        final nickname =
+            msg.payload['nickname'] as String? ?? msg.payload['playerId'] as String? ?? '???';
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('$nickname 연결 끊김')),
+            );
+          }
+        });
+
+      case WsMessageType.turnAutoSkipWarning:
+        setState(() => _autoSkipWarning = Map<String, dynamic>.from(msg.payload));
+
+      case WsMessageType.nodeMessage:
+        _handleNodeMessage(NodeMessage.fromEnvelope(msg));
+
       default:
         break;
+    }
+  }
+
+  /// Appends [msg] to the ring-buffer and delegates to [_onNodeMessageReceived].
+  void _handleNodeMessage(NodeMessage msg) {
+    if (!mounted || _disposing) return;
+    setState(() {
+      _receivedNodeMessages.insert(0, msg);
+      if (_receivedNodeMessages.length > 10) _receivedNodeMessages.removeLast();
+    });
+    _onNodeMessageReceived(msg);
+  }
+
+  /// Extension point for game-specific node message handling.
+  ///
+  /// Currently implements emote overlay display for [SimpleCardGameEmote.emote]
+  /// messages.  Future game packs can extend this method to add custom reactions.
+  void _onNodeMessageReceived(NodeMessage msg) {
+    // Resolve fromPlayerId → nickname via the latest lobby snapshot.
+    final fromInfo = _lobbyState.players
+        .where((p) => p.playerId == msg.fromPlayerId)
+        .firstOrNull;
+    final nickname = fromInfo?.nickname ?? msg.fromPlayerId;
+
+    if (msg.type == SimpleCardGameEmote.emote) {
+      final emoji = msg.payload['emoji'] as String?;
+      if (emoji == null) return;
+      setState(() => _emoteOverlays.add((emoji: emoji, fromNickname: nickname)));
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _emoteOverlays.removeAt(0));
+      });
+    } else if (msg.type == SimpleCardGameEmote.chat) {
+      final text = msg.payload['text'] as String?;
+      if (text == null || text.isEmpty) return;
+      setState(() => _chatOverlays.add((text: text, fromNickname: nickname)));
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _chatOverlays.removeAt(0));
+      });
     }
   }
 
@@ -359,6 +459,49 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     );
   }
 
+  /// Sends a [NodeMessage] to a specific player or broadcasts it to all.
+  ///
+  /// [toPlayerId] `null` = broadcast; non-null = unicast.
+  void _sendNodeMessage(
+    String type, {
+    String? toPlayerId,
+    Map<String, dynamic> payload = const {},
+  }) {
+    final identity = _identity;
+    if (identity == null) return;
+    _client?.sendMessage(
+      NodeMessage(
+        fromPlayerId: _assignedPlayerId ?? identity.deviceId,
+        toPlayerId: toPlayerId,
+        type: type,
+        payload: payload,
+      ).toEnvelope(),
+    );
+  }
+
+  /// 게임 종료 후 연결은 유지한 채 대기실(lobby)로 돌아간다.
+  /// GameBoard가 resetGame()을 호출하면 GAME_RESET 브로드캐스트가 오고
+  /// 이미 lobby 상태이므로 자연스럽게 상태가 갱신된다.
+  void _returnToLobby() {
+    final playerId = _assignedPlayerId ?? _identity?.deviceId;
+    if (playerId != null) {
+      // 서버에 ready=false 전송 — 다음 게임 준비 상태 초기화
+      try {
+        _client?.sendMessage(
+          SetReadyMessage(playerId: playerId, isReady: false).toEnvelope(),
+        );
+      } catch (_) {}
+    }
+    setState(() {
+      _phase = _NodePhase.lobby;
+      _playerView = null;
+      _gameState = null;
+      _isReady = false;
+      _actionPending = false;
+      _autoSkipWarning = null;
+    });
+  }
+
   void _disconnect() {
     final identity = _identity;
     if (identity != null) {
@@ -413,6 +556,17 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
             _NodePhase.lobby => _buildLobby(),
             _NodePhase.inGame => _buildGameUI(),
           },
+          // Auto-skip warning banner (shown when an offline player's turn is
+          // counting down to an automatic END_TURN).
+          if (_autoSkipWarning != null) _buildAutoSkipBanner(_autoSkipWarning!),
+          // Emote overlays — shown on top of all other content.
+          ..._emoteOverlays.asMap().entries.map(
+                (entry) => _buildEmoteOverlay(entry.value, entry.key),
+              ),
+          // Chat overlays — shown above emote overlays.
+          ..._chatOverlays.asMap().entries.map(
+                (entry) => _buildChatOverlay(entry.value, entry.key),
+              ),
           // Sprint 3: disconnection overlay (only when not in discovery).
           if (_phase != _NodePhase.discovery &&
               _connState != WsConnectionState.connected)
@@ -426,10 +580,40 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   // Sprint 3: connection overlay
   // ---------------------------------------------------------------------------
 
+  Widget _buildAutoSkipBanner(Map<String, dynamic> warning) {
+    final nickname = warning['nickname'] as String? ?? '?';
+    final seconds = warning['skipInSeconds'] as int? ?? 60;
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Material(
+        color: Colors.orange.shade700,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(Icons.timer, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$nickname 오프라인 — ${seconds}초 후 자동 스킵',
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildConnectionOverlay() {
     final isReconnecting = _connState == WsConnectionState.reconnecting;
+    final maxAttempts = _client?.maxReconnectAttempts ?? 0;
+    final attemptsLabel = maxAttempts <= 0 ? '무제한' : '$maxAttempts';
     final label = isReconnecting
-        ? '재접속 시도 중... ($_reconnectAttempts/${_client?.maxReconnectAttempts ?? 5})'
+        ? '재접속 시도 중... ($_reconnectAttempts/$attemptsLabel)'
         : '연결 끊김, 재접속 중...';
 
     return Positioned.fill(
@@ -549,6 +733,11 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           onActionTap: (action) =>
               _sendAction(action.actionType, action.params),
         ),
+        // Emote button row — always visible during game.
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: _buildEmoteBar(),
+        ),
         const Spacer(),
         // Score summary.
         _buildScoreSummary(pv),
@@ -556,8 +745,144 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     );
   }
 
+  /// Row of quick-reaction buttons + chat button displayed during the game.
+  Widget _buildEmoteBar() {
+    const emotes = SimpleCardGameEmote.all;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        ...emotes.map(
+          (emoji) => IconButton(
+            onPressed: () => _sendNodeMessage(
+              SimpleCardGameEmote.emote,
+              payload: {'emoji': emoji},
+            ),
+            icon: Text(emoji, style: const TextStyle(fontSize: 22)),
+            tooltip: emoji,
+          ),
+        ),
+        IconButton(
+          onPressed: _showChatDialog,
+          icon: const Icon(Icons.chat_bubble_outline),
+          tooltip: '메시지 전송',
+        ),
+      ],
+    );
+  }
+
+  /// Shows a text input dialog and sends a [SimpleCardGameEmote.chat] message.
+  Future<void> _showChatDialog() async {
+    final controller = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('메시지 전송'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: '최대 20자'),
+          maxLength: SimpleCardGameEmote.chatMaxLength,
+          autofocus: true,
+          onSubmitted: (_) => Navigator.of(context).pop(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('전송'),
+          ),
+        ],
+      ),
+    );
+
+    final text = controller.text.trim();
+    if (text.isNotEmpty && text.length <= SimpleCardGameEmote.chatMaxLength) {
+      _sendNodeMessage(SimpleCardGameEmote.chat, payload: {'text': text});
+    }
+  }
+
+  /// Floating overlay chip for a received emote.
+  ///
+  /// Stacked vertically by [index] so multiple simultaneous emotes do not
+  /// overlap each other.
+  Widget _buildEmoteOverlay(
+    ({String emoji, String fromNickname}) data,
+    int index,
+  ) {
+    return Positioned(
+      bottom: 120 + index * 56.0,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(data.emoji, style: const TextStyle(fontSize: 28)),
+              const SizedBox(width: 8),
+              Text(
+                data.fromNickname,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Floating chat bubble for a received chat message.
+  ///
+  /// Stacked vertically by [index] so multiple simultaneous messages do not
+  /// overlap each other.  Positioned above the emote overlay area.
+  Widget _buildChatOverlay(
+    ({String text, String fromNickname}) data,
+    int index,
+  ) {
+    return Positioned(
+      bottom: 240 + index * 56.0,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 280),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade700,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                data.fromNickname,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                data.text,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGameOverUI(PlayerView pv) {
-    return GameOverWidget(playerView: pv, onMainMenu: _disconnect);
+    return GameOverWidget(playerView: pv, onMainMenu: _returnToLobby);
   }
 
   Widget _buildTurnBanner(PlayerView pv) {

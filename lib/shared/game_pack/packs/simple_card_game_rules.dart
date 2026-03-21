@@ -5,10 +5,12 @@ import '../../game_session/game_session_state.dart';
 import '../../game_session/session_phase.dart';
 import '../../game_session/turn_state.dart';
 import '../../game_session/turn_step.dart';
+import '../../messages/node_message.dart';
 import '../card_definition.dart';
 import '../game_pack_rules.dart';
 import '../game_state.dart';
 import '../player_action.dart';
+import 'simple_card_game_emotes.dart';
 import '../views/allowed_action.dart';
 import '../views/board_view.dart';
 import '../views/player_view.dart';
@@ -413,6 +415,32 @@ class SimpleCardGameRules implements GamePackRules {
           turnState: newTurnState,
         )
         .addLog(logEntry);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Node-to-node message hook
+  // ---------------------------------------------------------------------------
+
+  /// Allowlists only [SimpleCardGameEmote.emote] messages with a valid emoji.
+  ///
+  /// Any other message type — or an emote with an unrecognised emoji — is
+  /// blocked by returning `null`.  This prevents GameNode clients from using
+  /// the node-message channel as an arbitrary side-channel.
+  @override
+  NodeMessage? onNodeMessage(NodeMessage msg, GameSessionState state) {
+    if (msg.type == SimpleCardGameEmote.emote) {
+      final emoji = msg.payload['emoji'] as String?;
+      if (emoji == null || !SimpleCardGameEmote.all.contains(emoji)) return null;
+      return msg;
+    }
+    if (msg.type == SimpleCardGameEmote.chat) {
+      final text = msg.payload['text'] as String?;
+      if (text == null ||
+          text.isEmpty ||
+          text.length > SimpleCardGameEmote.chatMaxLength) return null;
+      return msg;
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------------

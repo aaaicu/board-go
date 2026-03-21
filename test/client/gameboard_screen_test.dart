@@ -38,6 +38,9 @@ class _FakeHandle implements ServerHandle {
   Future<void> startGame({String packId = 'simple_card_battle'}) async {}
 
   @override
+  Future<void> resetGame() async {}
+
+  @override
   Future<void> stop() async {
     isRunning = false;
     await events.close();

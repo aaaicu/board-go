@@ -10,6 +10,7 @@ import '../../shared/game_pack/game_pack_interface.dart';
 import '../../shared/game_pack/game_state.dart';
 import '../../shared/game_pack/player_action.dart';
 import '../../shared/game_pack/views/board_view.dart';
+import '../../shared/game_session/session_phase.dart';
 import '../../shared/messages/board_view_message.dart';
 import '../../shared/messages/lobby_state_message.dart';
 import '../../shared/messages/ws_message.dart';
@@ -95,6 +96,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
   /// True once [handle.startGame()] has been called.
   bool _gameStarted = false;
 
+  /// Guards against showing the game-over reset dialog more than once.
+  bool _gameOverDialogShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -131,7 +135,10 @@ class _GameboardScreenState extends State<GameboardScreen> {
         setState(() {
           if (event.joined) {
             _players[event.playerId] = event.displayName;
-          } else {
+          } else if (!event.isTemporaryDisconnect) {
+            // Only remove the player on a deliberate LEAVE.
+            // Temporary disconnects preserve the seat; the offline badge is
+            // rendered via the lobbyState isConnected field.
             _players.remove(event.playerId);
           }
         });
@@ -153,10 +160,18 @@ class _GameboardScreenState extends State<GameboardScreen> {
       // Subscribe to board-view updates from the server isolate (Sprint 2).
       final boardViewSub = handle.boardViewEvents.listen((event) {
         if (!mounted) return;
+        final bv = BoardView.fromJson(event.boardView);
         setState(() {
-          _boardView = BoardView.fromJson(event.boardView);
+          _boardView = bv;
           _gameStarted = true;
         });
+        // Show a reset dialog when the game finishes.
+        if (bv.phase == SessionPhase.finished && !_gameOverDialogShown) {
+          _gameOverDialogShown = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _showGameOverDialog();
+          });
+        }
       });
 
       if (mounted) {
@@ -217,6 +232,40 @@ class _GameboardScreenState extends State<GameboardScreen> {
       if (second >= 16 && second <= 31) return true;
     }
     return false;
+  }
+
+  /// Shows a dialog when the game ends, asking whether to return to lobby.
+  Future<void> _showGameOverDialog() async {
+    final handle = _handle;
+    if (handle == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('게임 종료'),
+        content: const Text('게임이 끝났습니다.\n게임 준비 단계로 돌아가시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('결과 보기'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('게임 준비 단계로'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await handle.resetGame();
+      setState(() {
+        _gameStarted = false;
+        _boardView = null;
+        _gameOverDialogShown = false;
+      });
+    }
   }
 
   /// Handles back navigation. If players are connected, shows a confirmation

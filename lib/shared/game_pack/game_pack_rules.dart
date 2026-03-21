@@ -1,4 +1,5 @@
 import '../game_session/game_session_state.dart';
+import '../messages/node_message.dart';
 import 'player_action.dart';
 import 'views/allowed_action.dart';
 import 'views/board_view.dart';
@@ -84,4 +85,20 @@ abstract class GamePackRules {
   /// Security invariant: the returned [PlayerView.hand] must contain ONLY the
   /// cards belonging to [playerId].  No other player's hand may be included.
   PlayerView buildPlayerView(GameSessionState state, String playerId);
+
+  // ---------------------------------------------------------------------------
+  // Node-to-node message hook
+  // ---------------------------------------------------------------------------
+
+  /// Intercept or transform a [NodeMessage] before it is routed.
+  ///
+  /// Returning `null` blocks the message (it will not be delivered).
+  /// The default implementation is a transparent pass-through — game packs
+  /// that do not need message filtering can leave this unoverridden.
+  ///
+  /// Override in a concrete [GamePackRules] to:
+  ///   - Restrict which message types are allowed (allowlisting).
+  ///   - Validate payload content.
+  ///   - Transform the message before forwarding.
+  NodeMessage? onNodeMessage(NodeMessage msg, GameSessionState state) => msg;
 }
