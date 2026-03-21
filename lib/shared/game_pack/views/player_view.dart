@@ -28,6 +28,13 @@ class PlayerView {
   /// Monotonically increasing version counter mirroring [GameSessionState.version].
   final int version;
 
+  /// Game-pack–specific private data sent exclusively to this player.
+  ///
+  /// Use this to pass structured private state (e.g. portfolio, private
+  /// forecast, pending fees) without encoding it into [hand].
+  /// All values must be JSON-serialisable.  Defaults to an empty map.
+  final Map<String, dynamic> data;
+
   const PlayerView({
     required this.phase,
     required this.playerId,
@@ -36,6 +43,7 @@ class PlayerView {
     required this.turnState,
     required this.allowedActions,
     required this.version,
+    this.data = const {},
   });
 
   PlayerView copyWith({
@@ -46,6 +54,7 @@ class PlayerView {
     Object? turnState = _kUnset,
     List<AllowedAction>? allowedActions,
     int? version,
+    Map<String, dynamic>? data,
   }) =>
       PlayerView(
         phase: phase ?? this.phase,
@@ -57,6 +66,7 @@ class PlayerView {
             : turnState as TurnState?,
         allowedActions: allowedActions ?? this.allowedActions,
         version: version ?? this.version,
+        data: data ?? this.data,
       );
 
   factory PlayerView.fromJson(Map<String, dynamic> json) {
@@ -75,6 +85,7 @@ class PlayerView {
           .map((e) => AllowedAction.fromJson(e as Map<String, dynamic>))
           .toList(),
       version: json['version'] as int,
+      data: (json['data'] as Map<String, dynamic>?) ?? const {},
     );
   }
 
@@ -86,6 +97,7 @@ class PlayerView {
         if (turnState != null) 'turnState': turnState!.toJson(),
         'allowedActions': allowedActions.map((a) => a.toJson()).toList(),
         'version': version,
+        if (data.isNotEmpty) 'data': data,
       };
 }
 

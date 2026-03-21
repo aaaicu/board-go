@@ -1,0 +1,11 @@
+{
+  "id": "stockpile",
+  "name": "Stockpile",
+  "nameKo": "스탁파일",
+  "description": "주식 투자와 내부자 거래로 최고의 투자자가 되세요",
+  "minPlayers": 3,
+  "maxPlayers": 5,
+  "estimatedMinutes": 45,
+  "version": "1.0.0",
+  "rulesClass": "StockpileRules"
+}

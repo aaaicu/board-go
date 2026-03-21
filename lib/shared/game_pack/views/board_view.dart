@@ -27,6 +27,13 @@ class BoardView {
   /// Monotonically increasing version counter mirroring [GameSessionState.version].
   final int version;
 
+  /// Game-pack–specific public data sent to the GameBoard.
+  ///
+  /// Use this to pass structured public state (e.g. stock prices, stockpile
+  /// contents, current phase) without encoding it into unrelated fields.
+  /// All values must be JSON-serialisable.  Defaults to an empty map.
+  final Map<String, dynamic> data;
+
   const BoardView({
     required this.phase,
     required this.scores,
@@ -35,6 +42,7 @@ class BoardView {
     required this.discardPile,
     required this.recentLog,
     required this.version,
+    this.data = const {},
   });
 
   BoardView copyWith({
@@ -45,6 +53,7 @@ class BoardView {
     List<String>? discardPile,
     List<GameLogEntry>? recentLog,
     int? version,
+    Map<String, dynamic>? data,
   }) =>
       BoardView(
         phase: phase ?? this.phase,
@@ -56,6 +65,7 @@ class BoardView {
         discardPile: discardPile ?? this.discardPile,
         recentLog: recentLog ?? this.recentLog,
         version: version ?? this.version,
+        data: data ?? this.data,
       );
 
   factory BoardView.fromJson(Map<String, dynamic> json) {
@@ -75,6 +85,7 @@ class BoardView {
           .map((e) => GameLogEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
       version: json['version'] as int,
+      data: (json['data'] as Map<String, dynamic>?) ?? const {},
     );
   }
 
@@ -86,6 +97,7 @@ class BoardView {
         'discardPile': discardPile,
         'recentLog': recentLog.map((e) => e.toJson()).toList(),
         'version': version,
+        if (data.isNotEmpty) 'data': data,
       };
 }
 
