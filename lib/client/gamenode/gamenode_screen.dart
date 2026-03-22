@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../shared/app_theme.dart';
 import '../shared/ws_client.dart';
 import '../shared/player_identity.dart';
 import '../../shared/game_pack/views/allowed_action.dart';
@@ -25,6 +27,7 @@ import 'game_over_widget.dart';
 import 'hand_widget.dart';
 import 'lobby_waiting_screen.dart';
 import 'player_action_widget.dart';
+import 'stockpile_player_widget.dart';
 
 /// Possible UI phases for the GameNode.
 enum _NodePhase { discovery, lobby, inGame }
@@ -99,6 +102,16 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   Map<String, dynamic>? _autoSkipWarning;
 
   // ---------------------------------------------------------------------------
+  // Force-end vote state
+  // ---------------------------------------------------------------------------
+
+  /// True while the force-end vote dialog is open.
+  ///
+  /// Guards against showing the dialog more than once if the server somehow
+  /// sends duplicate FORCE_END_VOTE_START messages.
+  bool _voteDialogOpen = false;
+
+  // ---------------------------------------------------------------------------
   // Node-to-node messaging state
   // ---------------------------------------------------------------------------
 
@@ -165,10 +178,14 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           decoration: const InputDecoration(hintText: '닉네임 입력'),
           autofocus: true,
           maxLength: 24,
+          style: const TextStyle(color: AppTheme.onSurface),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.onSurfaceMuted,
+            ),
             child: const Text('취소'),
           ),
           TextButton(
@@ -187,6 +204,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
               }
               if (context.mounted) Navigator.of(context).pop();
             },
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
             child: const Text('저장'),
           ),
         ],
@@ -259,6 +277,23 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     _sendJoin(client, identity);
   }
 
+  void _applyOrientation(String orientation) {
+    switch (orientation) {
+      case 'landscape':
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      case 'portrait':
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      default:
+        SystemChrome.setPreferredOrientations([]);
+    }
+  }
+
   void _sendJoin(WsClient client, PlayerIdentity identity) {
     client.sendMessage(
       JoinMessage.join(
@@ -327,6 +362,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
       case WsMessageType.playerView:
         final pvm = PlayerViewMessage.fromEnvelope(msg);
+        final wasInGame = _phase == _NodePhase.inGame;
         setState(() {
           _playerView = pvm.playerView;
           if (_phase == _NodePhase.lobby) {
@@ -338,6 +374,11 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           // A new PLAYER_VIEW means a new turn has started; clear the warning.
           _autoSkipWarning = null;
         });
+        // Apply node orientation on first player view (game start).
+        if (!wasInGame) {
+          _applyOrientation(
+              pvm.playerView.data['_nodeOrientation'] as String? ?? 'portrait');
+        }
 
       // BOARD_VIEW is for the GameBoard (iPad); GameNode ignores it.
       case WsMessageType.boardView:
@@ -345,6 +386,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
       case WsMessageType.gameReset:
         // Game ended — the old token is no longer useful for this session.
+        _applyOrientation('any'); // Restore free orientation in lobby
         PlayerIdentity.clearReconnectToken();
         WakelockPlus.disable();
         setState(() {
@@ -385,7 +427,7 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
               ..showSnackBar(
                 SnackBar(
                   content: Text('$nickname 재접속됨'),
-                  backgroundColor: Colors.green.shade700,
+                  backgroundColor: AppTheme.tertiaryContainer,
                   duration: const Duration(seconds: 2),
                 ),
               );
@@ -398,9 +440,108 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       case WsMessageType.nodeMessage:
         _handleNodeMessage(NodeMessage.fromEnvelope(msg));
 
+      case WsMessageType.forceEndVoteStart:
+        _handleForceEndVoteStart(msg.payload);
+
+      case WsMessageType.forceEndVoteResult:
+        _handleForceEndVoteResult(msg.payload);
+
       default:
         break;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Force-end vote handlers
+  // ---------------------------------------------------------------------------
+
+  void _handleForceEndVoteStart(Map<String, dynamic> payload) {
+    if (!mounted || _disposing) return;
+    if (_voteDialogOpen) return; // Already showing the dialog.
+
+    setState(() => _voteDialogOpen = true);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('게임 강제종료 투표'),
+        content: const Text(
+          '게임 보드가 강제 종료를 요청했습니다.\n강제 종료에 동의하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _sendForceEndVote(agree: false);
+              Navigator.pop(ctx);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.onSurfaceMuted,
+            ),
+            child: const Text('반대'),
+          ),
+          TextButton(
+            onPressed: () {
+              _sendForceEndVote(agree: true);
+              Navigator.pop(ctx);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.error,
+              backgroundColor: AppTheme.errorContainer,
+            ),
+            child: const Text('찬성'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      if (mounted) setState(() => _voteDialogOpen = false);
+    });
+  }
+
+  void _handleForceEndVoteResult(Map<String, dynamic> payload) {
+    if (!mounted || _disposing) return;
+
+    // Dismiss the vote dialog if it is still open (e.g. timed out server-side
+    // before the player voted).
+    if (_voteDialogOpen) {
+      Navigator.of(context, rootNavigator: true).pop();
+      // _voteDialogOpen is reset by the .then() callback on the dialog future.
+    }
+
+    final agreed = payload['agreed'] as bool? ?? false;
+    final agreeCount = payload['agreeCount'] as int? ?? 0;
+    final totalCount = payload['totalCount'] as int? ?? 0;
+
+    final message = agreed
+        ? '강제 종료 가결 ($agreeCount/$totalCount) — 로비로 이동합니다'
+        : '강제 종료 부결 ($agreeCount/$totalCount) — 게임 계속';
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: agreed
+                ? AppTheme.secondaryContainer
+                : AppTheme.primaryContainer,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    });
+    // If the vote passed, the server broadcasts GAME_RESET immediately after,
+    // which the existing gameReset case handles to return to the lobby.
+  }
+
+  void _sendForceEndVote({required bool agree}) {
+    final playerId = _assignedPlayerId ?? _identity?.deviceId;
+    if (playerId == null) return;
+    _client?.sendMessage(
+      WsMessage(
+        type: WsMessageType.forceEndVote,
+        payload: {'playerId': playerId, 'agree': agree},
+      ),
+    );
   }
 
   /// Appends [msg] to the ring-buffer and delegates to [_onNodeMessageReceived].
@@ -603,11 +744,15 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.onSurfaceMuted,
+            ),
             child: const Text('취소'),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('나가기', style: TextStyle(color: Colors.red)),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+            child: const Text('나가기'),
           ),
         ],
       ),
@@ -629,17 +774,22 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         }
       },
       child: Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('board-go'),
+        backgroundColor: AppTheme.background,
+        title: Image.asset(
+          'assets/images/logo.png',
+          height: 36,
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit),
+            icon: const Icon(Icons.edit, color: AppTheme.onSurfaceMuted),
             tooltip: '닉네임 변경',
             onPressed: _showNicknameDialog,
           ),
           if (_phase != _NodePhase.discovery)
             IconButton(
-              icon: const Icon(Icons.logout),
+              icon: const Icon(Icons.logout, color: AppTheme.onSurfaceMuted),
               tooltip: 'Disconnect',
               onPressed: _disconnect,
             ),
@@ -684,18 +834,30 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       top: 0,
       left: 0,
       right: 0,
-      child: Material(
-        color: Colors.orange.shade700,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: AnimatedSlide(
+        offset: Offset.zero,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        child: Container(
+          color: AppTheme.secondaryContainer,
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              const Icon(Icons.timer, color: Colors.white, size: 18),
+              const Icon(
+                Icons.timer_outlined,
+                color: AppTheme.secondary,
+                size: 18,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '$nickname 오프라인 — ${seconds}초 후 자동 스킵',
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: const TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 13,
+                    color: AppTheme.onSecondaryContainer,
+                  ),
                 ),
               ),
             ],
@@ -715,20 +877,35 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
     return Positioned.fill(
       child: ColoredBox(
-        color: Colors.black54,
+        color: Colors.black.withValues(alpha: 0.6),
         child: Center(
-          child: Card(
+          child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 32),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x66000000),
+                  blurRadius: 40,
+                  offset: Offset(0, 20),
+                ),
+              ],
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(28),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
+                  const CircularProgressIndicator(color: AppTheme.primary),
+                  const SizedBox(height: 20),
                   Text(
                     label,
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 15,
+                      color: AppTheme.onSurface,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -763,30 +940,59 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     final nickname = _identity?.nickname ?? '...';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Card(
-        elevation: 1,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              const Icon(Icons.person, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '닉네임: $nickname',
-                  style: const TextStyle(fontSize: 15),
-                  overflow: TextOverflow.ellipsis,
-                ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.primaryContainer,
               ),
-              IconButton(
-                icon: const Icon(Icons.edit, size: 20),
-                tooltip: '닉네임 변경',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: _showNicknameDialog,
+              child: const Icon(
+                Icons.person_outline,
+                color: AppTheme.primary,
+                size: 20,
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '닉네임',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.onSurfaceMuted,
+                    ),
+                  ),
+                  Text(
+                    nickname,
+                    style: const TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              tooltip: '닉네임 변경',
+              color: AppTheme.onSurfaceMuted,
+              onPressed: _showNicknameDialog,
+            ),
+          ],
         ),
       ),
     );
@@ -794,46 +1000,74 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
   /// Banner shown when a previous session's reconnect token is available.
   Widget _buildResumeCard(String serverUrl) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      color: Colors.green.shade50,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.green.shade300),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Row(
           children: [
-            Icon(Icons.play_circle_filled,
-                color: Colors.green.shade700, size: 32),
+            const Icon(
+              Icons.play_circle_outline_rounded,
+              color: AppTheme.tertiary,
+              size: 30,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     '이전 게임이 진행 중이에요',
                     style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade800,
+                      fontFamily: 'Manrope',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.onTertiaryContainer,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    serverUrl.replaceFirst('ws://', '').replaceFirst('/ws', ''),
+                    serverUrl
+                        .replaceFirst('ws://', '')
+                        .replaceFirst('/ws', ''),
                     style: TextStyle(
-                        fontSize: 12, color: Colors.green.shade600),
+                      fontSize: 12,
+                      color: AppTheme.onTertiaryContainer
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
                 ],
               ),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: Colors.white,
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 40,
+              child: Material(
+                color: AppTheme.tertiary,
+                borderRadius: BorderRadius.circular(9999),
+                child: InkWell(
+                  onTap: () => _connectTo(serverUrl),
+                  borderRadius: BorderRadius.circular(9999),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14),
+                    child: Center(
+                      child: Text(
+                        '이어하기',
+                        style: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.background,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              onPressed: () => _connectTo(serverUrl),
-              child: const Text('이어하기'),
             ),
           ],
         ),
@@ -893,6 +1127,14 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
   Widget _buildPlayerViewUI(PlayerView pv) {
     if (pv.phase == SessionPhase.finished) {
       return _buildGameOverUI(pv);
+    }
+
+    // Stockpile game pack: delegate to the Stockpile-specific player widget.
+    if (pv.data['packId'] == 'stockpile') {
+      return StockpilePlayerWidget(
+        playerView: pv,
+        onAction: (type, params) => _sendAction(type, params),
+      );
     }
 
     final allowedTypes = pv.allowedActions.map((a) => a.actionType).toSet();
@@ -1007,19 +1249,32 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       right: 0,
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.circular(24),
+            color: AppTheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(9999),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x40000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(data.emoji, style: const TextStyle(fontSize: 28)),
+              Text(data.emoji, style: const TextStyle(fontSize: 26)),
               const SizedBox(width: 8),
               Text(
                 data.fromNickname,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: const TextStyle(
+                  fontFamily: 'Manrope',
+                  color: AppTheme.onSurface,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),
@@ -1043,10 +1298,17 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       child: Center(
         child: Container(
           constraints: const BoxConstraints(maxWidth: 280),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.blue.shade700,
+            color: AppTheme.primaryContainer,
             borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x40000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1054,14 +1316,20 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
               Text(
                 data.fromNickname,
                 style: const TextStyle(
-                  color: Colors.white70,
+                  fontFamily: 'Manrope',
+                  color: AppTheme.onSurfaceMuted,
                   fontSize: 11,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 data.text,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
+                style: const TextStyle(
+                  fontFamily: 'Manrope',
+                  color: AppTheme.onSurface,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1079,29 +1347,66 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     final isMyTurn = pv.allowedActions.isNotEmpty;
     final ts = pv.turnState;
 
-    return Container(
-      color: isMyTurn ? Colors.blue.shade50 : Colors.grey.shade100,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isMyTurn
+            ? AppTheme.tertiaryContainer
+            : AppTheme.surfaceContainerLow,
+        boxShadow: isMyTurn
+            ? [
+                BoxShadow(
+                  color: AppTheme.tertiary.withValues(alpha: 0.18),
+                  blurRadius: 16,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
       child: Row(
         children: [
           Icon(
-            isMyTurn ? Icons.play_arrow : Icons.hourglass_top,
-            color: isMyTurn ? Colors.blue : Colors.grey,
-            size: 20,
+            isMyTurn ? Icons.play_arrow_rounded : Icons.hourglass_top_rounded,
+            color: isMyTurn ? AppTheme.tertiary : AppTheme.onSurfaceMuted,
+            size: 22,
           ),
           const SizedBox(width: 8),
           Text(
             isMyTurn ? '내 차례' : '대기 중...',
             style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: isMyTurn ? Colors.blue.shade700 : Colors.grey.shade600,
+              fontFamily: 'Manrope',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isMyTurn
+                  ? AppTheme.onTertiaryContainer
+                  : AppTheme.onSurfaceMuted,
             ),
           ),
           if (ts != null) ...[
             const Spacer(),
-            Text(
-              'Round ${ts.round}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isMyTurn
+                    ? AppTheme.tertiary.withValues(alpha: 0.15)
+                    : AppTheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(9999),
+              ),
+              child: Text(
+                'Round ${ts.round}',
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: isMyTurn
+                      ? AppTheme.onTertiaryContainer
+                      : AppTheme.onSurfaceMuted,
+                ),
+              ),
             ),
           ],
         ],
@@ -1111,11 +1416,8 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
   Widget _buildScoreSummary(PlayerView pv) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: AppTheme.surfaceContainerLowest,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: pv.scores.entries.map((e) {
@@ -1124,17 +1426,24 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isSelf ? 'You' : e.key,
+                isSelf ? '나' : e.key,
                 style: TextStyle(
+                  fontFamily: 'Manrope',
                   fontSize: 12,
-                  fontWeight: isSelf ? FontWeight.bold : FontWeight.normal,
-                  color: isSelf ? Colors.blue.shade700 : Colors.black87,
+                  fontWeight:
+                      isSelf ? FontWeight.w700 : FontWeight.w400,
+                  color: isSelf ? AppTheme.primary : AppTheme.onSurfaceMuted,
                 ),
               ),
+              const SizedBox(height: 2),
               Text(
                 '${e.value} pts',
                 style: TextStyle(
-                  fontWeight: isSelf ? FontWeight.bold : FontWeight.normal,
+                  fontFamily: 'Manrope',
+                  fontSize: 14,
+                  fontWeight:
+                      isSelf ? FontWeight.w700 : FontWeight.w400,
+                  color: isSelf ? AppTheme.onSurface : AppTheme.onSurfaceMuted,
                 ),
               ),
             ],

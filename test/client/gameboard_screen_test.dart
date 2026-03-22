@@ -38,6 +38,15 @@ class _FakeHandle implements ServerHandle {
   final StreamController<BoardViewEvent> boardViewEventsController =
       StreamController<BoardViewEvent>.broadcast();
 
+  final StreamController<ForceEndVoteStartedEvent> voteStartedEventsController =
+      StreamController<ForceEndVoteStartedEvent>.broadcast();
+
+  final StreamController<ForceEndVoteResultEvent> voteResultEventsController =
+      StreamController<ForceEndVoteResultEvent>.broadcast();
+
+  final StreamController<GameResetEvent> gameResetEventsController =
+      StreamController<GameResetEvent>.broadcast();
+
   @override
   Stream<PlayerEvent> get playerEvents => events.stream;
 
@@ -49,10 +58,24 @@ class _FakeHandle implements ServerHandle {
       boardViewEventsController.stream;
 
   @override
+  Stream<ForceEndVoteStartedEvent> get forceEndVoteStartedEvents =>
+      voteStartedEventsController.stream;
+
+  @override
+  Stream<ForceEndVoteResultEvent> get forceEndVoteResultEvents =>
+      voteResultEventsController.stream;
+
+  @override
+  Stream<GameResetEvent> get gameResetEvents => gameResetEventsController.stream;
+
+  @override
   Future<void> startGame({String packId = 'simple_card_battle'}) async {}
 
   @override
   Future<void> resetGame() async {}
+
+  @override
+  Future<void> startForceEndVote() async {}
 
   @override
   Future<void> stop() async {
@@ -60,6 +83,9 @@ class _FakeHandle implements ServerHandle {
     await events.close();
     await lobbyEvents.close();
     await boardViewEventsController.close();
+    await voteStartedEventsController.close();
+    await voteResultEventsController.close();
+    await gameResetEventsController.close();
   }
 }
 

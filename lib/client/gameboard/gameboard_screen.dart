@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../server/mdns_registrar.dart';
@@ -15,6 +16,7 @@ import '../../shared/game_session/session_phase.dart';
 import '../../shared/messages/board_view_message.dart';
 import '../../shared/messages/lobby_state_message.dart';
 import '../../shared/messages/ws_message.dart';
+import '../shared/app_theme.dart';
 import 'game_board_play_screen.dart';
 import 'lobby_screen.dart';
 import 'qr_code_widget.dart';
@@ -81,7 +83,17 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
   StreamSubscription<LobbyStateEvent>? _lobbySub;
   StreamSubscription<BoardViewEvent>? _boardViewSub;
+  StreamSubscription<ForceEndVoteStartedEvent>? _voteStartedSub;
+  StreamSubscription<ForceEndVoteResultEvent>? _voteResultSub;
+  StreamSubscription<GameResetEvent>? _gameResetSub;
   final _mdns = MdnsRegistrar();
+
+  /// True while a force-end vote is in progress.
+  bool _voteInProgress = false;
+
+  /// True when the ServerStatusWidget overlay is visible during a game.
+  /// In lobby it is always shown; in game it defaults to hidden.
+  bool _showServerStatus = false;
 
   /// Latest lobby state received from the server isolate.
   LobbyStateMessage _lobbyState = const LobbyStateMessage(
@@ -110,6 +122,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
     WakelockPlus.disable();
     _lobbySub?.cancel();
     _boardViewSub?.cancel();
+    _voteStartedSub?.cancel();
+    _voteResultSub?.cancel();
+    _gameResetSub?.cancel();
     _handle?.stop();
     _mdns.unregister();
     super.dispose();
@@ -146,15 +161,58 @@ class _GameboardScreenState extends State<GameboardScreen> {
       final boardViewSub = handle.boardViewEvents.listen((event) {
         if (!mounted) return;
         final bv = BoardView.fromJson(event.boardView);
+        final wasInGame = _gameStarted;
         setState(() {
           _boardView = bv;
           _gameStarted = true;
         });
+        // Apply board orientation on first game view.
+        if (!wasInGame) {
+          _applyOrientation(
+              bv.data['_boardOrientation'] as String? ?? 'landscape');
+        }
         // Show a reset dialog when the game finishes.
         if (bv.phase == SessionPhase.finished && !_gameOverDialogShown) {
           _gameOverDialogShown = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _showGameOverDialog();
+          });
+        }
+      });
+
+      // Subscribe to force-end vote started events.
+      final voteStartedSub = handle.forceEndVoteStartedEvents.listen((event) {
+        if (!mounted) return;
+        setState(() => _voteInProgress = true);
+      });
+
+      // Subscribe to force-end vote result events — resets the button regardless of outcome.
+      final voteResultSub = handle.forceEndVoteResultEvents.listen((event) {
+        if (!mounted) return;
+        setState(() => _voteInProgress = false);
+      });
+
+      // Subscribe to game reset events (from votes or manual reset).
+      final gameResetSub = handle.gameResetEvents.listen((event) {
+        if (!mounted) return;
+        _applyOrientation('any'); // Restore free orientation in lobby
+        setState(() {
+          _gameStarted = false;
+          _boardView = null;
+          _gameOverDialogShown = false;
+          _voteInProgress = false;
+          _showServerStatus = false;
+        });
+        if (event.forcedByVote && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('강제 종료 투표 가결 — 로비로 이동합니다'),
+                  backgroundColor: AppTheme.secondaryContainer,
+                ),
+              );
+            }
           });
         }
       });
@@ -166,12 +224,34 @@ class _GameboardScreenState extends State<GameboardScreen> {
           _isEmulatorIp = isEmulator;
           _lobbySub = lobbySub;
           _boardViewSub = boardViewSub;
+          _voteStartedSub = voteStartedSub;
+          _voteResultSub = voteResultSub;
+          _gameResetSub = gameResetSub;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString());
       }
+    }
+  }
+
+  /// Applies [SystemChrome.setPreferredOrientations] based on the pack's
+  /// orientation string ('landscape', 'portrait', or 'any').
+  void _applyOrientation(String orientation) {
+    switch (orientation) {
+      case 'landscape':
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      case 'portrait':
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      default:
+        SystemChrome.setPreferredOrientations([]);
     }
   }
 
@@ -232,10 +312,12 @@ class _GameboardScreenState extends State<GameboardScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.onSurfaceMuted),
             child: const Text('결과 보기'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
             child: const Text('게임 준비 단계로'),
           ),
         ],
@@ -248,6 +330,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
         _gameStarted = false;
         _boardView = null;
         _gameOverDialogShown = false;
+        _voteInProgress = false;
       });
     }
   }
@@ -269,11 +352,13 @@ class _GameboardScreenState extends State<GameboardScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.onSurfaceMuted),
             child: const Text('취소'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('나가기', style: TextStyle(color: Colors.red)),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+            child: const Text('나가기'),
           ),
         ],
       ),
@@ -281,8 +366,43 @@ class _GameboardScreenState extends State<GameboardScreen> {
     return confirmed == true;
   }
 
+  /// Initiates the force-end vote flow: first shows a confirmation dialog on
+  /// the GameBoard, then sends the command to the server if confirmed.
+  Future<void> _onForceEndVote() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('게임 강제종료'),
+        content: const Text(
+          '게임을 강제 종료하겠습니까?\n'
+          '모든 플레이어에게 투표가 전송됩니다.\n'
+          '과반수가 동의하면 로비로 돌아갑니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.onSurfaceMuted),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.error,
+              backgroundColor: AppTheme.errorContainer,
+            ),
+            child: const Text('투표 시작'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _handle?.startForceEndVote();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final showVoteAction = _gameStarted && _boardView != null;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -295,7 +415,66 @@ class _GameboardScreenState extends State<GameboardScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('board-go')),
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.background,
+          title: Image.asset(
+            'assets/images/logo.png',
+            height: 36,
+          ),
+          actions: showVoteAction
+              ? [
+                  // Server status toggle
+                  IconButton(
+                    icon: Icon(
+                      Icons.people_outline,
+                      color: _showServerStatus
+                          ? AppTheme.primary
+                          : AppTheme.onSurfaceMuted,
+                    ),
+                    tooltip: '서버 상태',
+                    onPressed: () =>
+                        setState(() => _showServerStatus = !_showServerStatus),
+                  ),
+                  if (_voteInProgress)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(9999),
+                          ),
+                          child: const Text(
+                            '투표 진행 중...',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.onSecondaryContainer,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    TextButton.icon(
+                      icon: const Icon(Icons.stop_circle_outlined,
+                          color: AppTheme.error),
+                      label: const Text(
+                        '강제종료',
+                        style: TextStyle(
+                          color: AppTheme.error,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      onPressed: _onForceEndVote,
+                    ),
+                ]
+              : null,
+        ),
         body: _buildBody(),
       ),
     );
@@ -305,7 +484,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
     if (_error != null) {
       return Center(
         child: Text('Server error: $_error',
-            style: const TextStyle(color: Colors.red)),
+            style: const TextStyle(color: AppTheme.error)),
       );
     }
 
@@ -323,34 +502,38 @@ class _GameboardScreenState extends State<GameboardScreen> {
         if (_isEmulatorIp)
           Container(
             margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange),
+              color: AppTheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
               children: [
-                Icon(Icons.warning_amber, color: Colors.orange),
-                SizedBox(width: 8),
+                Icon(Icons.warning_amber_outlined,
+                    color: AppTheme.secondary, size: 20),
+                SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '에뮬레이터 전용 IP입니다.\n외부 기기에서 접속할 수 없어요. 실제 기기를 사용해주세요.',
-                    style: TextStyle(fontSize: 13),
+                    '에뮬레이터 전용 IP입니다. 외부 기기에서 접속할 수 없어요.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.onSecondaryContainer,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        // Server status bar (always visible)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: ServerStatusWidget(
-            port: handle.port,
-            playerCount: _lobbyState.players.length,
-            playerNames: _lobbyState.players.map((p) => p.nickname).toList(),
+        // Server status: always visible in lobby; toggled via AppBar button in game.
+        if (!_gameStarted)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: ServerStatusWidget(
+              port: handle.port,
+              playerCount: _lobbyState.players.length,
+              playerNames: _lobbyState.players.map((p) => p.nickname).toList(),
+            ),
           ),
-        ),
         // In-game: show the board view.
         if (_gameStarted && _boardView != null)
           Expanded(
@@ -359,6 +542,14 @@ class _GameboardScreenState extends State<GameboardScreen> {
               playerNames: {
                 for (final p in _lobbyState.players) p.playerId: p.nickname
               },
+              serverStatusWidget: _showServerStatus
+                  ? ServerStatusWidget(
+                      port: handle.port,
+                      playerCount: _lobbyState.players.length,
+                      playerNames:
+                          _lobbyState.players.map((p) => p.nickname).toList(),
+                    )
+                  : null,
             ),
           )
         // Lobby: show the lobby screen.

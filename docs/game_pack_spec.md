@@ -199,6 +199,11 @@ abstract class GamePackRules {
   int get minPlayers;
   int get maxPlayers;
 
+  // 화면 방향 선언 (플랫폼이 자동 적용)
+  // 'landscape' | 'portrait' | 'any'
+  String get boardOrientation => 'landscape';  // GameBoard(iPad) 기본값
+  String get nodeOrientation => 'portrait';    // GameNode(폰) 기본값
+
   // 게임 초기화: lobby → inGame 전환
   GameSessionState createInitialGameState(GameSessionState sessionState);
 
@@ -221,6 +226,23 @@ abstract class GamePackRules {
   NodeMessage? onNodeMessage(NodeMessage msg, GameSessionState state) => msg;
 }
 ```
+
+### 화면 방향 (Orientation)
+
+게임 팩은 `boardOrientation`과 `nodeOrientation`을 선언해 플랫폼이 자동으로 화면 방향을 고정하게 한다.
+
+```dart
+// 예: GameBoard는 가로, GameNode는 가로 고정인 게임
+@override String get boardOrientation => 'landscape';
+@override String get nodeOrientation => 'landscape';
+```
+
+가능한 값:
+- `'landscape'` — 가로 모드 고정
+- `'portrait'` — 세로 모드 고정
+- `'any'` — 방향 제한 없음
+
+플랫폼은 게임 시작 시 `SystemChrome.setPreferredOrientations()`를 자동 호출하고, 게임 종료(로비 복귀) 시 잠금을 해제한다. 게임 팩 구현 코드는 `SystemChrome`을 직접 호출하지 않는다.
 
 ---
 
@@ -448,6 +470,7 @@ lib/shared/game_pack/packs/
 
 assets/gamepacks/my_game/
   manifest.json             ← 팩 메타데이터 (필수)
+  cover.png                 ← 로비 카드 커버 일러스트 (필수, 권장 크기: 600×400px)
   cards.json                ← 카드 정의 (카드 게임일 때)
   board_layout.json         ← 보드 UI 힌트 (선택)
 ```
@@ -460,6 +483,7 @@ assets/gamepacks/my_game/
   "name": "My Game",
   "nameKo": "내 게임",
   "description": "게임 설명",
+  "coverImage": "assets/gamepacks/my_game/cover.png",
   "minPlayers": 2,
   "maxPlayers": 4,
   "estimatedMinutes": 30,
@@ -467,6 +491,8 @@ assets/gamepacks/my_game/
   "rulesClass": "MyGameRules"
 }
 ```
+
+`coverImage`는 로비 게임 선택 화면의 카드 상단에 표시되는 일러스트 이미지 경로다. 지정하지 않으면 기본 플레이스홀더가 표시된다.
 
 ### cards.json 형식 (카드 게임일 때)
 
@@ -676,5 +702,118 @@ return PlayerView(
   },
 );
 ```
+
+---
+
+---
+
+## UI 구현 가이드라인
+
+게임 팩이 GameBoard(iPad)용 위젯(`*BoardWidget`) 또는 GameNode(폰)용 위젯을 직접 구현할 때는 아래 가이드를 따른다.
+
+### 디자인 시스템 — AppTheme
+
+board-go는 단일 다크 테마 디자인 시스템을 사용한다. 전체 명세는 `stitch/DESIGN.md`와 `stitch/PROMPT.md`를 참고한다.
+
+**컬러 토큰 (AppTheme):**
+
+| 토큰 | Hex | 용도 |
+|------|-----|------|
+| `AppTheme.background` | `#EEF5EE` | 최상위 배경 (세이지 민트) |
+| `AppTheme.surfaceContainer` | `#FFFFFF` | 카드/패널 기본 배경 (흰색) |
+| `AppTheme.surfaceContainerHigh` | `#E8F0E8` | 강조 카드/패널 배경 |
+| `AppTheme.primary` | `#FF7C38` | 액션 주황색, CTA, 선택 강조 |
+| `AppTheme.secondary` | `#3EC9A0` | 준비/활성 청록색, 온라인 상태 |
+| `AppTheme.tertiary` | `#5B8FF9` | 정보성 파란색 액센트 |
+| `AppTheme.error` | `#E84B4B` | 위험/강제종료 빨강 |
+| `AppTheme.onSurface` | `#1C2033` | 기본 텍스트 (다크 네이비) |
+| `AppTheme.onSurfaceMuted` | `#7A8099` | 비활성/보조 텍스트 |
+
+**핵심 규칙:**
+- 1px solid 구분선 금지 — 섹션 경계는 배경색 변화로 표현한다.
+- 순수 흰색(`#FFFFFF`)과 순수 검정(`#000000`) 조합 금지.
+- 카드 컴포넌트는 `surface-container-high` 계층과 `xl` 둥글기(1.5rem)를 사용한다.
+- 모든 인터랙티브 요소의 최소 터치 타겟: 44×44dp.
+- `AppTheme` 토큰을 하드코딩된 색상 대신 사용한다.
+
+### ServerStatusWidget 배치
+
+GameBoard(iPad)용 보드 위젯은 `serverStatusWidget: Widget?` 파라미터를 받는다. 이 위젯은 서버 상태(포트, 연결된 플레이어 수)를 보여주며, AppBar `👥` 버튼으로 토글된다.
+
+```dart
+class MyGameBoardWidget extends StatelessWidget {
+  final BoardView boardView;
+  final Map<String, String> playerNames;
+  final Widget? serverStatusWidget;  // ← 플랫폼이 주입
+
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // null이면 숨겨짐; 위치는 게임 팩이 자유롭게 결정
+        if (serverStatusWidget != null) serverStatusWidget!,
+        // ... 게임별 UI
+      ],
+    );
+  }
+}
+```
+
+게임 팩 구현자는 `serverStatusWidget`을 레이아웃 내 적절한 위치에 배치한다. null 체크 후 조건부로 렌더링하면 된다.
+
+### 로비 카드 (coverImage)
+
+로비의 게임 선택 화면은 각 팩의 커버 이미지(`coverImage`)를 카드 상단에 표시한다. 이미지가 없으면 기본 플레이스홀더가 표시된다.
+
+권장 사양:
+- 파일: `assets/gamepacks/<id>/cover.png`
+- 크기: 600×400px (3:2 비율)
+- 배경: 다크(게임 테마 색상), 반투명 요소 허용
+- 스타일: 게임 분위기를 담은 일러스트 또는 그래픽 아트워크
+
+---
+
+## 플랫폼 기능 (Platform Features)
+
+게임 팩이 별도로 구현하지 않아도 플랫폼 서버(`GameServer`)가 자동으로 제공하는 기능이다.
+
+### 게임 강제종료 투표 (Force-End Vote)
+
+게임 진행 중 GameBoard(iPad)가 "게임 강제종료" 버튼을 누르면 모든 연결된 플레이어에게 투표가 전송된다. 과반수가 동의하면 게임이 로비로 초기화된다.
+
+**메시지 흐름:**
+
+```
+GameBoard (iPad)
+  │  [버튼 클릭 → 확인 다이얼로그]
+  │  handle.startForceEndVote()
+  │
+  ▼
+GameServer.startForceEndVote()
+  │  broadcast FORCE_END_VOTE_START { playerCount, timeoutSeconds: 30 }
+  │  eventPort.send(ForceEndVoteStartedEvent)   ← GameBoard UI 업데이트
+  │
+  ▼ (각 GameNode)
+GameNode: FORCE_END_VOTE_START 수신
+  │  → 다이얼로그 표시 (찬성 / 반대)
+  │
+  ▼ (플레이어 선택 또는 30초 자동 해소)
+GameNode: FORCE_END_VOTE { playerId, agree: true|false } → 서버 전송
+
+GameServer: 전원 투표 완료 또는 타임아웃 시 _resolveVote()
+  │  broadcast FORCE_END_VOTE_RESULT { agreed, agreeCount, totalCount }
+  │
+  ├─ agreed=true  → _resetGameForcedByVote()
+  │    │  broadcast GAME_RESET
+  │    │  eventPort.send(GameResetEvent(forcedByVote: true))  ← 로비 복귀
+  │    └─ broadcast LOBBY_STATE (갱신)
+  │
+  └─ agreed=false → 게임 계속 (아무 추가 메시지 없음)
+```
+
+**게임 팩 구현 시 주의사항:**
+- `GamePackRules`는 이 기능을 전혀 구현하지 않아도 된다.
+- `FORCE_END_VOTE`, `FORCE_END_VOTE_START`, `FORCE_END_VOTE_RESULT` 메시지는 `GameServer`가 독립적으로 처리한다.
+- 투표가 가결되면 서버가 자동으로 `resetGame()`과 동일한 효과를 수행한다.
+- 30초 타임아웃 동안 투표하지 않은 플레이어는 기권(미투표)으로 처리된다.
 
 **⚠️ 보안**: `PlayerView.data`에는 이 플레이어의 데이터만 담아야 한다. 다른 플레이어의 비공개 데이터를 절대 포함하면 안 된다.

@@ -22,7 +22,11 @@ enum WsMessageType {
   playerReconnected,
   turnAutoSkipWarning,
   // Node-to-node messaging (Sprint 6)
-  nodeMessage;
+  nodeMessage,
+  // Force-end vote (platform feature)
+  forceEndVoteStart,
+  forceEndVote,
+  forceEndVoteResult;
 
   String toJson() => switch (this) {
         WsMessageType.action => 'ACTION',
@@ -44,6 +48,9 @@ enum WsMessageType {
         WsMessageType.playerReconnected => 'PLAYER_RECONNECTED',
         WsMessageType.turnAutoSkipWarning => 'TURN_AUTO_SKIP_WARNING',
         WsMessageType.nodeMessage => 'NODE_MESSAGE',
+        WsMessageType.forceEndVoteStart => 'FORCE_END_VOTE_START',
+        WsMessageType.forceEndVote => 'FORCE_END_VOTE',
+        WsMessageType.forceEndVoteResult => 'FORCE_END_VOTE_RESULT',
       };
 
   static WsMessageType fromJson(String value) => switch (value) {
@@ -66,6 +73,9 @@ enum WsMessageType {
         'PLAYER_RECONNECTED' => WsMessageType.playerReconnected,
         'TURN_AUTO_SKIP_WARNING' => WsMessageType.turnAutoSkipWarning,
         'NODE_MESSAGE' => WsMessageType.nodeMessage,
+        'FORCE_END_VOTE_START' => WsMessageType.forceEndVoteStart,
+        'FORCE_END_VOTE' => WsMessageType.forceEndVote,
+        'FORCE_END_VOTE_RESULT' => WsMessageType.forceEndVoteResult,
         _ => throw FormatException('Unknown WsMessageType: $value'),
       };
 }

@@ -59,6 +59,18 @@ final _kManifestJson = jsonEncode({
   'rulesClass': 'SimpleCardGameRules',
 });
 
+final _kStockpileManifestJson = jsonEncode({
+  'id': 'stockpile',
+  'name': 'Stockpile',
+  'nameKo': '스탁파일',
+  'description': '주식 투자와 내부자 거래로 최고의 투자자가 되세요',
+  'minPlayers': 3,
+  'maxPlayers': 5,
+  'estimatedMinutes': 45,
+  'version': '1.0.0',
+  'rulesClass': 'StockpileRules',
+});
+
 /// Minimal 2-card deck used for fast parsing tests.
 final _kMinimalCardsJson = jsonEncode([
   {'id': 'clubs_A', 'suit': 'clubs', 'rank': 'A', 'value': 1, 'displayName': '클럽 A'},
@@ -89,6 +101,9 @@ FakeAssetBundle _bundleWith({
       'assets/gamepacks/$_kPackId/manifest.json': manifestJson,
     if (cardsJson != null)
       'assets/gamepacks/$_kPackId/cards.json': cardsJson,
+    // All bundles include the stockpile manifest so listAvailablePacks()
+    // can iterate every known pack without throwing a FlutterError.
+    'assets/gamepacks/stockpile/manifest.json': _kStockpileManifestJson,
   });
 }
 

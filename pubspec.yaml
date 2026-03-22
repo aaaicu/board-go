@@ -44,6 +44,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/images/
     - assets/gamepacks/simple_card_battle/manifest.json
     - assets/gamepacks/simple_card_battle/cards.json
     - assets/gamepacks/simple_card_battle/board_layout.json

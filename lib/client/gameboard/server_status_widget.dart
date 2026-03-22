@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../shared/app_theme.dart';
+
 /// Shows the current server port and the list of connected players.
 class ServerStatusWidget extends StatelessWidget {
   final int port;
@@ -25,7 +27,7 @@ class ServerStatusWidget extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.wifi, color: Colors.green),
+                const Icon(Icons.wifi, color: AppTheme.tertiary),
                 const SizedBox(width: 8),
                 Text(
                   'Server: port $port',

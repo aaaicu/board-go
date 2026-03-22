@@ -58,6 +58,31 @@ class BoardViewEvent {
   const BoardViewEvent({required this.boardView});
 }
 
+/// Sent from the server Isolate to the UI isolate when a force-end vote starts.
+class ForceEndVoteStartedEvent {
+  final int playerCount;
+  const ForceEndVoteStartedEvent({required this.playerCount});
+}
+
+/// Sent from the server Isolate to the UI isolate when a force-end vote resolves.
+class ForceEndVoteResultEvent {
+  final bool agreed;
+  final int agreeCount;
+  final int totalCount;
+  const ForceEndVoteResultEvent({
+    required this.agreed,
+    required this.agreeCount,
+    required this.totalCount,
+  });
+}
+
+/// Sent from the server Isolate to the UI isolate when the game is reset,
+/// either by a force-end vote passing or by the host manually resetting.
+class GameResetEvent {
+  final bool forcedByVote;
+  const GameResetEvent({this.forcedByVote = false});
+}
+
 // ---------------------------------------------------------------------------
 // Command / response types
 // ---------------------------------------------------------------------------
@@ -97,6 +122,12 @@ class _StartGameCommand extends _ServerCommand {
 class _ResetGameCommand extends _ServerCommand {
   final SendPort replyPort;
   _ResetGameCommand({required this.replyPort});
+}
+
+/// Signals the server isolate to initiate a force-end vote among all connected players.
+class _ForceEndVoteCommand extends _ServerCommand {
+  final SendPort replyPort;
+  _ForceEndVoteCommand({required this.replyPort});
 }
 
 class _ServerStarted {
@@ -144,6 +175,9 @@ void _serverIsolateEntry(_IsolateConfig config) {
     } else if (message is _ResetGameCommand) {
       server.resetGame();
       message.replyPort.send(null);
+    } else if (message is _ForceEndVoteCommand) {
+      server.startForceEndVote();
+      message.replyPort.send(null);
     } else if (message is _StopServerCommand) {
       await server.stop();
       message.replyPort.send(null);
@@ -173,6 +207,16 @@ abstract class ServerHandle {
   /// Stream of board-view snapshots emitted after each in-game action.
   Stream<BoardViewEvent> get boardViewEvents;
 
+  /// Stream of force-end vote started events emitted when a vote is initiated.
+  Stream<ForceEndVoteStartedEvent> get forceEndVoteStartedEvents;
+
+  /// Stream of force-end vote result events emitted when a vote resolves.
+  Stream<ForceEndVoteResultEvent> get forceEndVoteResultEvents;
+
+  /// Stream of game reset events emitted when the game is reset, whether
+  /// by a passing force-end vote or by the host manually.
+  Stream<GameResetEvent> get gameResetEvents;
+
   /// Signals the server to transition from lobby to the in-game phase.
   ///
   /// [packId] selects which game-pack rules to activate.
@@ -181,6 +225,12 @@ abstract class ServerHandle {
 
   /// Resets the game back to the lobby phase.
   Future<void> resetGame();
+
+  /// Initiates a force-end vote among all currently connected players.
+  ///
+  /// Does nothing if the session is not in the inGame phase, or if a vote
+  /// is already in progress.
+  Future<void> startForceEndVote();
 
   Future<void> stop();
 }
@@ -197,6 +247,12 @@ class ServerIsolateHandle implements ServerHandle {
       StreamController<LobbyStateEvent>.broadcast();
   final StreamController<BoardViewEvent> _boardViewController =
       StreamController<BoardViewEvent>.broadcast();
+  final StreamController<ForceEndVoteStartedEvent> _voteStartedController =
+      StreamController<ForceEndVoteStartedEvent>.broadcast();
+  final StreamController<ForceEndVoteResultEvent> _voteResultController =
+      StreamController<ForceEndVoteResultEvent>.broadcast();
+  final StreamController<GameResetEvent> _gameResetController =
+      StreamController<GameResetEvent>.broadcast();
 
   ServerIsolateHandle._({
     required this.port,
@@ -217,6 +273,17 @@ class ServerIsolateHandle implements ServerHandle {
   Stream<BoardViewEvent> get boardViewEvents => _boardViewController.stream;
 
   @override
+  Stream<ForceEndVoteStartedEvent> get forceEndVoteStartedEvents =>
+      _voteStartedController.stream;
+
+  @override
+  Stream<ForceEndVoteResultEvent> get forceEndVoteResultEvents =>
+      _voteResultController.stream;
+
+  @override
+  Stream<GameResetEvent> get gameResetEvents => _gameResetController.stream;
+
+  @override
   Future<void> startGame({String packId = 'simple_card_battle'}) async {
     final reply = ReceivePort();
     _commandPort.send(_StartGameCommand(replyPort: reply.sendPort, packId: packId));
@@ -233,6 +300,14 @@ class ServerIsolateHandle implements ServerHandle {
   }
 
   @override
+  Future<void> startForceEndVote() async {
+    final reply = ReceivePort();
+    _commandPort.send(_ForceEndVoteCommand(replyPort: reply.sendPort));
+    await reply.first;
+    reply.close();
+  }
+
+  @override
   Future<void> stop() async {
     if (!_running) return;
     final reply = ReceivePort();
@@ -243,6 +318,9 @@ class ServerIsolateHandle implements ServerHandle {
     await _eventController.close();
     await _lobbyController.close();
     await _boardViewController.close();
+    await _voteStartedController.close();
+    await _voteResultController.close();
+    await _gameResetController.close();
   }
 }
 
@@ -297,6 +375,15 @@ class ServerIsolate {
       } else if (event is BoardViewEvent &&
           !handle._boardViewController.isClosed) {
         handle._boardViewController.add(event);
+      } else if (event is ForceEndVoteStartedEvent &&
+          !handle._voteStartedController.isClosed) {
+        handle._voteStartedController.add(event);
+      } else if (event is ForceEndVoteResultEvent &&
+          !handle._voteResultController.isClosed) {
+        handle._voteResultController.add(event);
+      } else if (event is GameResetEvent &&
+          !handle._gameResetController.isClosed) {
+        handle._gameResetController.add(event);
       }
     });
 

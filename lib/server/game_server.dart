@@ -14,6 +14,7 @@ import '../shared/game_pack/game_pack_interface.dart';
 import '../shared/game_pack/game_state.dart';
 import '../shared/game_pack/game_pack_rules.dart';
 import '../shared/game_pack/packs/simple_card_game_rules.dart';
+import '../shared/game_pack/packs/stockpile_rules.dart';
 import '../shared/game_pack/player_action.dart';
 import '../shared/game_session/game_session_state.dart';
 import '../shared/game_session/game_log_entry.dart';
@@ -32,7 +33,14 @@ import '../shared/messages/state_update_message.dart';
 import '../shared/messages/ws_message.dart';
 import 'game_state_store.dart';
 import 'processed_actions_cache.dart';
-import 'server_isolate.dart' show BoardViewEvent, LobbyStateEvent, PlayerEvent;
+import 'server_isolate.dart'
+    show
+        BoardViewEvent,
+        ForceEndVoteResultEvent,
+        ForceEndVoteStartedEvent,
+        GameResetEvent,
+        LobbyStateEvent,
+        PlayerEvent;
 import 'session_manager.dart';
 
 /// Wraps a [WebSocketChannel] sink to implement [SessionSink].
@@ -121,13 +129,34 @@ class GameServer {
   /// Provided for testing only — production code uses [_kDisconnectedTurnTimeout].
   final Duration? _disconnectedTurnTimeoutOverride;
 
+  // ---------------------------------------------------------------------------
+  // Force-end vote state
+  // ---------------------------------------------------------------------------
+
+  bool _voteActive = false;
+
+  /// Tracks each connected player's vote: true = agree, false = disagree.
+  final Map<String, bool> _votes = {};
+
+  /// Auto-resolve timer; fires after 30 seconds if not all players have voted.
+  Timer? _voteTimer;
+
+  /// Override for the force-end vote timeout (seconds).
+  ///
+  /// Provided for testing only — production code uses [_kForceEndVoteTimeout].
+  final Duration? _voteTimeoutOverride;
+
+  static const _kForceEndVoteTimeout = Duration(seconds: 30);
+
   GameServer({
     required this.gamePack,
     this.eventPort,
     GameStateStore? store,
     Duration? disconnectedTurnTimeoutOverride,
+    Duration? voteTimeoutOverride,
   })  : _store = store,
-        _disconnectedTurnTimeoutOverride = disconnectedTurnTimeoutOverride;
+        _disconnectedTurnTimeoutOverride = disconnectedTurnTimeoutOverride,
+        _voteTimeoutOverride = voteTimeoutOverride;
 
   int? get port => _httpServer?.port;
   bool get isRunning => _httpServer != null;
@@ -161,6 +190,9 @@ class GameServer {
     _heartbeatTimer = null;
     _disconnectedTurnTimer?.cancel();
     _disconnectedTurnTimer = null;
+    _voteTimer?.cancel();
+    _voteTimer = null;
+    _voteActive = false;
     await gamePack.dispose();
     await _httpServer?.close(force: true);
     _httpServer = null;
@@ -178,6 +210,8 @@ class GameServer {
   /// asset system is fully initialised.
   GamePackRules _createRulesForPack(String packId) {
     switch (packId) {
+      case 'stockpile':
+        return StockpileRules();
       case 'simple_card_battle':
       case 'simple_card_game':
       default:
@@ -194,6 +228,14 @@ class GameServer {
   /// Called by the server isolate when it receives a [_ResetGameCommand].
   void resetGame() {
     if (_sessionState.phase == SessionPhase.lobby) return;
+
+    // If a vote was active, cancel it cleanly before resetting.
+    if (_voteActive) {
+      _voteTimer?.cancel();
+      _voteTimer = null;
+      _voteActive = false;
+      _votes.clear();
+    }
 
     // Reset each player's ready state so the lobby starts fresh.
     for (final playerId in _sessions.playerIds) {
@@ -216,6 +258,9 @@ class GameServer {
         WsMessage(type: WsMessageType.gameReset, payload: {}).toJson(),
       ),
     );
+
+    // Notify the UI isolate — normal (non-vote-triggered) reset.
+    eventPort?.send(const GameResetEvent(forcedByVote: false));
 
     // Send a fresh lobby snapshot so GameNode lobby screens update immediately.
     _broadcastLobbyState();
@@ -333,6 +378,8 @@ class GameServer {
         _handlePing(PingMessage.fromEnvelope(msg), sink);
       case WsMessageType.nodeMessage:
         _handleNodeMessage(NodeMessage.fromEnvelope(msg));
+      case WsMessageType.forceEndVote:
+        _handleForceEndVote(msg);
       default:
         _sendError(sink, 'Unexpected message type: ${msg.type}');
     }
@@ -388,28 +435,19 @@ class GameServer {
       displayName: displayName,
     ));
 
-    // Send the current game state to the newly joined player (legacy).
-    // Only during inGame phase to prevent the client from transitioning to
-    // inGame prematurely while still in the lobby.
+    // On join during an active game, send the full current view.
+    // This covers both reconnects (token matched) and fresh joins where the
+    // token was lost (server restart, token mismatch). In both cases the client
+    // needs PlayerViewMessage to show the correct game-pack UI; the legacy
+    // StateUpdateMessage alone only triggers the fallback UI.
     if (_sessionState.phase == SessionPhase.inGame) {
-      final state = _gameState;
-      if (state != null) {
-        sink.add(
-          jsonEncode(
-            StateUpdateMessage(state: state.toJson()).toEnvelope().toJson(),
-          ),
-        );
-      }
-    }
-
-    // On reconnect during an active game, cancel any pending auto-skip timer
-    // for this player's turn and immediately re-send the full game view.
-    if (isReconnect && _sessionState.phase == SessionPhase.inGame) {
-      // If this player was the active player with a pending auto-skip, cancel it.
-      final turnState = _sessionState.turnState;
-      if (turnState?.activePlayerId == resolvedPlayerId) {
-        _disconnectedTurnTimer?.cancel();
-        _disconnectedTurnTimer = null;
+      if (isReconnect) {
+        // Cancel any pending auto-skip timer for the returning active player.
+        final turnState = _sessionState.turnState;
+        if (turnState?.activePlayerId == resolvedPlayerId) {
+          _disconnectedTurnTimer?.cancel();
+          _disconnectedTurnTimer = null;
+        }
       }
 
       final playerView =
@@ -419,7 +457,7 @@ class GameServer {
         PlayerViewMessage(playerView: playerView).toEnvelope().toJson(),
       );
 
-      // Also re-send the board view so the reconnecting client is fully in sync.
+      // Also send the board view so the client is fully in sync.
       final boardView = _gamePackRules.buildBoardView(_sessionState);
       sink.add(jsonEncode(
         BoardViewMessage(boardView: boardView).toEnvelope().toJson(),
@@ -681,7 +719,14 @@ class GameServer {
   /// Also forwards the [BoardView] to the UI isolate via [eventPort] so the
   /// [GameBoardPlayScreen] can update without subscribing to the WebSocket.
   void _broadcastViews() {
-    final boardView = _gamePackRules.buildBoardView(_sessionState);
+    // Build views from the pack, then inject platform-managed orientation keys.
+    final rawBoardView = _gamePackRules.buildBoardView(_sessionState);
+    final boardView = rawBoardView.copyWith(data: {
+      '_boardOrientation': _gamePackRules.boardOrientation,
+      '_nodeOrientation': _gamePackRules.nodeOrientation,
+      ...rawBoardView.data,
+    });
+
     final boardViewEnvelope =
         BoardViewMessage(boardView: boardView).toEnvelope().toJson();
 
@@ -691,8 +736,12 @@ class GameServer {
     eventPort?.send(BoardViewEvent(boardView: boardView.toJson()));
 
     for (final playerId in _sessions.playerIds) {
-      final playerView =
+      final rawPlayerView =
           _gamePackRules.buildPlayerView(_sessionState, playerId);
+      final playerView = rawPlayerView.copyWith(data: {
+        '_nodeOrientation': _gamePackRules.nodeOrientation,
+        ...rawPlayerView.data,
+      });
       _sessions.sendToPlayer(
         playerId,
         PlayerViewMessage(playerView: playerView).toEnvelope().toJson(),
@@ -902,6 +951,130 @@ class GameServer {
         'skipInSeconds': _kDisconnectedTurnTimeout.inSeconds,
       },
     ).toJson()));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Force-end vote
+  // ---------------------------------------------------------------------------
+
+  /// Initiates a force-end vote among all currently connected players.
+  ///
+  /// Broadcasts [WsMessageType.forceEndVoteStart] to all connected GameNodes
+  /// and starts a 30-second auto-resolve timer.
+  ///
+  /// Does nothing if:
+  ///   - the session is not in the inGame phase, or
+  ///   - a vote is already in progress.
+  void startForceEndVote() {
+    if (_sessionState.phase != SessionPhase.inGame) return;
+    if (_voteActive) return;
+
+    _voteActive = true;
+    _votes.clear();
+
+    final connectedCount = _sessions.playerIds
+        .where((id) => _sessions.isConnected(id))
+        .length;
+
+    _sessions.broadcast(jsonEncode(WsMessage(
+      type: WsMessageType.forceEndVoteStart,
+      payload: {'playerCount': connectedCount, 'timeoutSeconds': 30},
+    ).toJson()));
+
+    // Notify the UI isolate so the GameBoard can update its state.
+    eventPort?.send(ForceEndVoteStartedEvent(playerCount: connectedCount));
+
+    // Auto-resolve after the configured timeout.
+    final timeout = _voteTimeoutOverride ?? _kForceEndVoteTimeout;
+    _voteTimer = Timer(timeout, _resolveVote);
+  }
+
+  void _handleForceEndVote(WsMessage msg) {
+    if (!_voteActive) return;
+
+    final playerId = msg.payload['playerId'] as String?;
+    final agree = msg.payload['agree'] as bool? ?? false;
+
+    if (playerId == null || !_sessions.playerIds.contains(playerId)) return;
+
+    _votes[playerId] = agree;
+
+    // Resolve immediately once all currently-connected players have voted.
+    final connectedPlayers = _sessions.playerIds
+        .where((id) => _sessions.isConnected(id))
+        .toList();
+    final votedConnected =
+        _votes.keys.where((id) => connectedPlayers.contains(id)).length;
+    if (votedConnected >= connectedPlayers.length) {
+      _resolveVote();
+    }
+  }
+
+  void _resolveVote() {
+    if (!_voteActive) return;
+    _voteActive = false;
+    _voteTimer?.cancel();
+    _voteTimer = null;
+
+    final connectedPlayers = _sessions.playerIds
+        .where((id) => _sessions.isConnected(id))
+        .toList();
+    final total = connectedPlayers.length;
+    final agreeCount = _votes.values.where((v) => v).length;
+    final majority = agreeCount > total / 2;
+
+    _sessions.broadcast(jsonEncode(WsMessage(
+      type: WsMessageType.forceEndVoteResult,
+      payload: {
+        'agreed': majority,
+        'agreeCount': agreeCount,
+        'totalCount': total,
+      },
+    ).toJson()));
+
+    // Notify the UI isolate so it can reset the vote button regardless of outcome.
+    eventPort?.send(ForceEndVoteResultEvent(
+      agreed: majority,
+      agreeCount: agreeCount,
+      totalCount: total,
+    ));
+
+    if (majority) {
+      _resetGameForcedByVote();
+    }
+  }
+
+  /// Resets the game to the lobby as a consequence of a passed force-end vote.
+  ///
+  /// Behaves like [resetGame] but sends [GameResetEvent] with [forcedByVote] = true.
+  void _resetGameForcedByVote() {
+    // Reset player ready states.
+    for (final playerId in _sessions.playerIds) {
+      _sessions.setReady(playerId, false);
+    }
+
+    // Wipe game-specific session state back to an empty lobby.
+    _sessionState = GameSessionState(
+      sessionId: 'default',
+      phase: SessionPhase.lobby,
+      players: const {},
+      playerOrder: const [],
+      version: 0,
+      log: const [],
+    );
+
+    // Tell every connected GameNode to return to the lobby screen.
+    _sessions.broadcast(
+      jsonEncode(
+        WsMessage(type: WsMessageType.gameReset, payload: {}).toJson(),
+      ),
+    );
+
+    // Notify the UI isolate — this reset was triggered by a passing vote.
+    eventPort?.send(const GameResetEvent(forcedByVote: true));
+
+    // Send a fresh lobby snapshot.
+    _broadcastLobbyState();
   }
 
   // ---------------------------------------------------------------------------

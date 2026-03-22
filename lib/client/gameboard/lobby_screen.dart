@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../shared/game_pack/game_pack_loader.dart';
 import '../../shared/game_pack/game_pack_manifest.dart';
 import '../../shared/messages/lobby_state_message.dart';
+import '../shared/app_theme.dart';
+import '../shared/widgets/board_card.dart';
+import '../shared/widgets/primary_button.dart';
+import '../shared/widgets/status_chip.dart';
 import 'qr_code_widget.dart';
 
 /// Callback invoked when the host taps "게임 시작".
@@ -81,129 +85,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
     return count >= pack.minPlayers && count <= pack.maxPlayers;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // --- Game-pack selector ---
-          _buildPackSelector(context),
-          const SizedBox(height: 16),
-
-          // --- Player list ---
-          _buildPlayerList(context),
-          const SizedBox(height: 16),
-
-          // --- Start game button ---
-          ElevatedButton(
-            onPressed: _canStart
-                ? () => widget.onStartGame?.call(_selectedPackId!)
-                : null,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-            child: Text(
-              _startButtonLabel,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // --- QR / connection info ---
-          Text(
-            'QR 코드로 접속하세요',
-            style: Theme.of(context).textTheme.titleLarge,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: QrCodeWidget(
-              connectionData: qrData,
-              displayText: serverAddress,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Sub-builders
-  // ---------------------------------------------------------------------------
-
-  Widget _buildPackSelector(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '게임 팩 선택',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const Divider(),
-            _buildPackSelectorContent(context),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPackSelectorContent(BuildContext context) {
-    if (_loadError) {
-      return const Text('게임 팩을 불러오는 데 실패했습니다.');
-    }
-
-    final packs = _packs;
-    if (packs == null) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    if (packs.isEmpty) {
-      return const Text('사용 가능한 게임 팩이 없습니다.');
-    }
-
-    return Column(
-      children: packs.map((pack) => _PackCard(
-        pack: pack,
-        isSelected: _selectedPackId == pack.id,
-        onTap: () => setState(() => _selectedPackId = pack.id),
-      )).toList(),
-    );
-  }
-
-  Widget _buildPlayerList(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '플레이어 (${widget.lobbyState.players.length}명)',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const Divider(),
-            if (widget.lobbyState.players.isEmpty)
-              const Text('아직 접속한 플레이어가 없습니다.')
-            else
-              ...widget.lobbyState.players.map(
-                (p) => _PlayerRow(info: p),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   String get _startButtonLabel {
     if (_selectedPackId == null) return '게임 팩을 선택하세요';
     final pack = _selectedPack;
@@ -216,8 +97,271 @@ class _LobbyScreenState extends State<LobbyScreen> {
         return '최대 ${pack.maxPlayers}명 초과 (현재 $count명)';
       }
     }
-    if (!widget.lobbyState.canStart) return '모든 플레이어가 준비 완료되면 시작 가능합니다';
+    if (!widget.lobbyState.canStart) return '모든 플레이어 준비 완료 후 시작 가능';
     return '게임 시작';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // iPad layout: two-column side-by-side (pack + player | QR + start)
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 700;
+        if (isWide) {
+          return _buildWideLayout(context);
+        }
+        return _buildNarrowLayout(context);
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wide layout (iPad landscape / tablet)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildWideLayout(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left column: pack selector + player list
+        Expanded(
+          flex: 3,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 12, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSectionHeader(context, '게임 팩 선택'),
+                const SizedBox(height: 12),
+                _buildPackSelectorContent(context),
+                const SizedBox(height: 24),
+                _buildSectionHeader(
+                  context,
+                  '플레이어 (${widget.lobbyState.players.length}명)',
+                ),
+                const SizedBox(height: 12),
+                _buildPlayerList(context),
+              ],
+            ),
+          ),
+        ),
+        // Right column: QR code + start button
+        Expanded(
+          flex: 2,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(12, 24, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildQrSection(context),
+                const SizedBox(height: 24),
+                PrimaryButton(
+                  label: _startButtonLabel,
+                  onPressed: _canStart
+                      ? () => widget.onStartGame?.call(_selectedPackId!)
+                      : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Narrow layout (phone-sized)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildNarrowLayout(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, '게임 팩 선택'),
+          const SizedBox(height: 12),
+          _buildPackSelectorContent(context),
+          const SizedBox(height: 24),
+          _buildSectionHeader(
+            context,
+            '플레이어 (${widget.lobbyState.players.length}명)',
+          ),
+          const SizedBox(height: 12),
+          _buildPlayerList(context),
+          const SizedBox(height: 24),
+          _buildQrSection(context),
+          const SizedBox(height: 24),
+          PrimaryButton(
+            label: _startButtonLabel,
+            onPressed: _canStart
+                ? () => widget.onStartGame?.call(_selectedPackId!)
+                : null,
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section header — no border, just spacing + typography
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontFamily: 'Manrope',
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.onSurface,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pack selector
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPackSelectorContent(BuildContext context) {
+    if (_loadError) {
+      return _buildInfoCard(
+        child: const Text(
+          '게임 팩을 불러오는 데 실패했습니다.',
+          style: TextStyle(color: AppTheme.error),
+        ),
+      );
+    }
+
+    final packs = _packs;
+    if (packs == null) {
+      return _buildInfoCard(
+        child: const Center(
+          child: CircularProgressIndicator(color: AppTheme.primary),
+        ),
+      );
+    }
+
+    if (packs.isEmpty) {
+      return _buildInfoCard(
+        child: const Text(
+          '사용 가능한 게임 팩이 없습니다.',
+          style: TextStyle(color: AppTheme.onSurfaceMuted),
+        ),
+      );
+    }
+
+    return Column(
+      children: packs
+          .map(
+            (pack) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _PackCard(
+                pack: pack,
+                isSelected: _selectedPackId == pack.id,
+                onTap: () => setState(() => _selectedPackId = pack.id),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Widget _buildInfoCard({required Widget child}) {
+    return BoardCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: child,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Player list
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPlayerList(BuildContext context) {
+    if (widget.lobbyState.players.isEmpty) {
+      return BoardCard(
+        child: const Text(
+          '아직 접속한 플레이어가 없습니다.',
+          style: TextStyle(color: AppTheme.onSurfaceMuted),
+        ),
+      );
+    }
+
+    return Column(
+      children: widget.lobbyState.players
+          .map(
+            (p) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _PlayerRow(info: p),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // QR / connection info
+  // ---------------------------------------------------------------------------
+
+  Widget _buildQrSection(BuildContext context) {
+    return BoardCard(
+      child: Column(
+        children: [
+          const Text(
+            'QR 코드로 접속하세요',
+            style: TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '스마트폰 카메라로 스캔하여 참여',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.onSurfaceMuted,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: QrCodeWidget(
+                connectionData: widget.qrData,
+                displayText: null,
+                size: 180,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // IP address badge
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryContainer,
+              borderRadius: BorderRadius.circular(9999),
+            ),
+            child: Text(
+              widget.serverAddress,
+              style: const TextStyle(
+                fontFamily: 'Manrope',
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.primary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Expose for QrCodeWidget.
@@ -242,70 +386,103 @@ class _PackCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return GestureDetector(
+    return BoardCard(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outline,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    pack.nameKo,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    pack.description,
-                    style: theme.textTheme.bodySmall,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.people, size: 14),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${pack.minPlayers}–${pack.maxPlayers}명',
-                        style: theme.textTheme.labelSmall,
-                      ),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.timer, size: 14),
-                      const SizedBox(width: 4),
-                      Text(
-                        '약 ${pack.estimatedMinutes}분',
-                        style: theme.textTheme.labelSmall,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+      isSelected: isSelected,
+      backgroundColor: isSelected
+          ? AppTheme.surfaceContainerHighest
+          : AppTheme.surfaceContainerHigh,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Illustration placeholder — colored accent block
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppTheme.primaryContainer
+                  : AppTheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
             ),
-            if (isSelected)
-              Icon(Icons.check_circle, color: theme.colorScheme.primary),
+            child: Icon(
+              Icons.extension,
+              color: isSelected ? AppTheme.primary : AppTheme.onSurfaceMuted,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pack.nameKo,
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected
+                        ? AppTheme.primary
+                        : AppTheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  pack.description,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.onSurfaceMuted,
+                    height: 1.5,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                // Meta row: player count + estimated time
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.people_outline,
+                      size: 13,
+                      color: AppTheme.onSurfaceMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${pack.minPlayers}–${pack.maxPlayers}명',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.onSurfaceMuted,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(
+                      Icons.timer_outlined,
+                      size: 13,
+                      color: AppTheme.onSurfaceMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '약 ${pack.estimatedMinutes}분',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.onSurfaceMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (isSelected) ...[
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.check_circle_rounded,
+              color: AppTheme.primary,
+              size: 22,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -315,7 +492,6 @@ class _PackCard extends StatelessWidget {
 // Player row widget
 // ---------------------------------------------------------------------------
 
-/// A single row in the player list showing nickname and ready indicator.
 class _PlayerRow extends StatelessWidget {
   final LobbyStatePlayerInfo info;
 
@@ -323,34 +499,70 @@ class _PlayerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return BoardCard(
+      backgroundColor: AppTheme.surfaceContainerLow,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      borderRadius: 16,
       child: Row(
         children: [
-          Icon(
-            info.isConnected ? Icons.person : Icons.person_off,
-            size: 20,
-            color: info.isConnected ? Colors.blue : Colors.grey,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              info.nickname,
-              style: Theme.of(context).textTheme.bodyLarge,
+          // Avatar circle with initial letter
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primaryContainer,
+            ),
+            child: Center(
+              child: Text(
+                info.nickname.isNotEmpty
+                    ? info.nickname[0].toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                  fontFamily: 'Manrope',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.primary,
+                ),
+              ),
             ),
           ),
-          Icon(
-            info.isReady ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: info.isReady ? Colors.green : Colors.orange,
-            size: 20,
+          const SizedBox(width: 12),
+          // Online dot + nickname
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  OnlineDot(isOnline: info.isConnected),
+                  const SizedBox(width: 6),
+                  Text(
+                    info.nickname,
+                    style: const TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                info.isConnected ? '온라인' : '오프라인',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: info.isConnected
+                      ? AppTheme.onSurfaceMuted
+                      : AppTheme.offlineDot,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
-          Text(
-            info.isReady ? '준비 완료' : '대기 중',
-            style: TextStyle(
-              fontSize: 12,
-              color: info.isReady ? Colors.green : Colors.orange,
-            ),
+          const Spacer(),
+          // Ready chip
+          StatusChip(
+            status: info.isReady ? ChipStatus.ready : ChipStatus.waiting,
           ),
         ],
       ),

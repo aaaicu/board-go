@@ -101,7 +101,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Scan QR Code'), findsOneWidget);
+      expect(find.text('QR 코드 스캔'), findsOneWidget);
     });
 
     testWidgets('shows a "Search for servers" button', (tester) async {
@@ -111,7 +111,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Search for Servers'), findsOneWidget);
+      expect(find.text('주변 서버 자동 탐색'), findsOneWidget);
     });
 
     testWidgets('shows IP input field and connect button', (tester) async {
@@ -137,9 +137,9 @@ void main() {
       );
 
       // Clear and enter custom IP/port
-      await tester.enterText(find.widgetWithText(TextField, 'IP'), '10.0.0.1');
+      await tester.enterText(find.widgetWithText(TextField, 'IP 주소'), '10.0.0.1');
       await tester.enterText(
-          find.widgetWithText(TextField, 'Port'), '8080');
+          find.widgetWithText(TextField, '포트'), '8080');
       await tester.tap(find.text('접속'));
       await tester.pump();
 
@@ -156,7 +156,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Search for Servers'));
+      await tester.tap(find.text('주변 서버 자동 탐색'));
       await tester.pump();
 
       expect(searchCalled, isTrue);

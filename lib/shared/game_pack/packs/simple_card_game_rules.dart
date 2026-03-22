@@ -103,6 +103,12 @@ class SimpleCardGameRules implements GamePackRules {
   @override
   int get maxPlayers => 4;
 
+  @override
+  String get boardOrientation => 'landscape';
+
+  @override
+  String get nodeOrientation => 'portrait';
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------

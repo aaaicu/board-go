@@ -87,6 +87,12 @@ class StockpileRules extends GamePackRules {
   @override
   int get maxPlayers => 5;
 
+  @override
+  String get boardOrientation => 'landscape';
+
+  @override
+  String get nodeOrientation => 'landscape';
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -328,6 +334,7 @@ class StockpileRules extends GamePackRules {
       recentLog: recentLog,
       version: state.version,
       data: {
+        'packId': _kPackId,
         'phase': phase,
         'round': round,
         'totalRounds': totalRounds,
@@ -392,6 +399,8 @@ class StockpileRules extends GamePackRules {
       allowedActions: getAllowedActions(state, playerId),
       version: state.version,
       data: {
+        'packId': _kPackId,
+        'phase': gData['phase'] as String,
         'portfolio': myNormal,
         'splitPortfolio': mySplit,
         if (myForecast != null && myForecast.isNotEmpty)

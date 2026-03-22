@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../shared/game_pack/views/board_view.dart';
 import '../../shared/game_session/session_phase.dart';
+import '../shared/app_theme.dart';
+import 'stockpile_board_widget.dart';
 
 /// Renders the shared game board visible on the iPad (GameBoard) during
 /// the [SessionPhase.inGame] phase.
@@ -22,18 +24,36 @@ class GameBoardPlayScreen extends StatelessWidget {
   /// Player IDs that are currently offline (disconnected but not removed).
   final Set<String> offlinePlayerIds;
 
+  /// Optional server status widget provided by the platform.
+  ///
+  /// Non-null when the host has toggled the server-status overlay on.
+  /// Game-pack board widgets should embed this wherever it fits their layout,
+  /// or pass it down to a sub-widget.  When null the widget is hidden.
+  final Widget? serverStatusWidget;
+
   const GameBoardPlayScreen({
     super.key,
     required this.boardView,
     this.playerNames = const {},
     this.offlinePlayerIds = const {},
+    this.serverStatusWidget,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Stockpile game pack: delegate to the Stockpile-specific board widget.
+    if (boardView.data['packId'] == 'stockpile') {
+      return StockpileBoardWidget(
+        boardView: boardView,
+        playerNames: playerNames,
+        serverStatusWidget: serverStatusWidget,
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (serverStatusWidget != null) serverStatusWidget!,
         _buildTurnHeader(context),
         const Divider(height: 1),
         Expanded(
@@ -90,8 +110,11 @@ class GameBoardPlayScreen extends StatelessWidget {
           const Spacer(),
           if (boardView.phase == SessionPhase.finished)
             Chip(
-              label: const Text('Game Over'),
-              backgroundColor: Colors.red.shade100,
+              label: const Text(
+                'Game Over',
+                style: TextStyle(color: AppTheme.error),
+              ),
+              backgroundColor: AppTheme.errorContainer,
             ),
         ],
       ),
@@ -109,7 +132,10 @@ class GameBoardPlayScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Scores',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: AppTheme.onSurface)),
           const SizedBox(height: 8),
           ...boardView.scores.entries.map((e) {
             final name = playerNames[e.key] ?? e.key;
@@ -122,7 +148,7 @@ class GameBoardPlayScreen extends StatelessWidget {
               child: Row(
                 children: [
                   if (isActive && !isOffline)
-                    const Icon(Icons.arrow_right, size: 18, color: Colors.blue)
+                    const Icon(Icons.arrow_right, size: 18, color: AppTheme.primary)
                   else
                     const SizedBox(width: 18),
                   const SizedBox(width: 4),
@@ -136,17 +162,17 @@ class GameBoardPlayScreen extends StatelessWidget {
                                 ? FontWeight.bold
                                 : FontWeight.normal,
                             color: isOffline
-                                ? Colors.grey.shade400
-                                : Colors.black87,
+                                ? AppTheme.onSurfaceMuted
+                                : AppTheme.onSurface,
                           ),
                         ),
                         if (isOffline) ...[
                           const SizedBox(width: 6),
-                          Text(
+                          const Text(
                             '(오프라인)',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey.shade400,
+                              color: AppTheme.onSurfaceMuted,
                             ),
                           ),
                         ],
@@ -157,7 +183,9 @@ class GameBoardPlayScreen extends StatelessWidget {
                     '${e.value} pts',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: isOffline ? Colors.grey.shade400 : Colors.black87,
+                      color: isOffline
+                          ? AppTheme.onSurfaceMuted
+                          : AppTheme.onSurface,
                     ),
                   ),
                 ],
@@ -187,7 +215,7 @@ class GameBoardPlayScreen extends StatelessWidget {
             label: 'Deck',
             subtitle: '${boardView.deckRemaining} cards',
             icon: Icons.layers,
-            color: Colors.blue.shade50,
+            color: AppTheme.surfaceContainerHigh,
           ),
           const SizedBox(width: 16),
           _buildPileCard(
@@ -195,7 +223,7 @@ class GameBoardPlayScreen extends StatelessWidget {
             label: 'Discard',
             subtitle: topCard ?? '(empty)',
             icon: Icons.do_not_disturb_on,
-            color: Colors.orange.shade50,
+            color: AppTheme.secondaryContainer,
           ),
         ],
       ),
@@ -247,7 +275,10 @@ class GameBoardPlayScreen extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.only(bottom: 6),
             child: Text('Recent Actions',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: AppTheme.onSurface)),
           ),
           Expanded(
             child: ListView(

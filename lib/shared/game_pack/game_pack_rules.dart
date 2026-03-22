@@ -25,6 +25,29 @@ abstract class GamePackRules {
   int get maxPlayers;
 
   // ---------------------------------------------------------------------------
+  // Screen orientation
+  // ---------------------------------------------------------------------------
+
+  /// Preferred screen orientation for the **GameBoard** (iPad / large tablet).
+  ///
+  /// Valid values:
+  ///   - `'landscape'` — lock to landscape (recommended for wide board layouts)
+  ///   - `'portrait'`  — lock to portrait
+  ///   - `'any'`       — no restriction
+  ///
+  /// The platform reads this value and applies [SystemChrome.setPreferredOrientations]
+  /// automatically when the game starts.  Override to match your game's layout.
+  String get boardOrientation => 'landscape';
+
+  /// Preferred screen orientation for the **GameNode** (player phone).
+  ///
+  /// Valid values: `'landscape'`, `'portrait'`, `'any'`.
+  ///
+  /// The platform reads this value from [PlayerView.data] and applies
+  /// [SystemChrome.setPreferredOrientations] automatically when the game starts.
+  String get nodeOrientation => 'portrait';
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
