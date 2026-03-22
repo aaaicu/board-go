@@ -50,7 +50,8 @@ class GameNodeScreen extends StatefulWidget {
   State<GameNodeScreen> createState() => _GameNodeScreenState();
 }
 
-class _GameNodeScreenState extends State<GameNodeScreen> {
+class _GameNodeScreenState extends State<GameNodeScreen>
+    with TickerProviderStateMixin {
   WsClient? _client;
   StreamSubscription<WsConnectionState>? _connStateSub;
   _NodePhase _phase = _NodePhase.discovery;
@@ -140,9 +141,24 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
 
   bool _actionPending = false;
 
+  // ---------------------------------------------------------------------------
+  // Action notification toast
+  // ---------------------------------------------------------------------------
+
+  String? _notifMessage;
+  bool _notifVisible = false;
+  Timer? _notifTimer;
+  late AnimationController _notifAnim;
+  late Animation<double> _notifOpacity;
+
   @override
   void initState() {
     super.initState();
+    _notifAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _notifOpacity = CurvedAnimation(parent: _notifAnim, curve: Curves.easeOut);
     PlayerIdentity.load().then((identity) {
       if (mounted) setState(() => _identity = identity);
     });
@@ -157,6 +173,8 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
     WakelockPlus.disable();
     _connStateSub?.cancel();
     _client?.dispose();
+    _notifTimer?.cancel();
+    _notifAnim.dispose();
     super.dispose();
   }
 
@@ -446,6 +464,10 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       case WsMessageType.forceEndVoteResult:
         _handleForceEndVoteResult(msg.payload);
 
+      case WsMessageType.actionNotification:
+        final desc = msg.payload['description'] as String? ?? '';
+        if (desc.isNotEmpty) _showNotif(desc);
+
       default:
         break;
     }
@@ -580,6 +602,22 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
         if (mounted) setState(() => _chatOverlays.removeAt(0));
       });
     }
+  }
+
+  void _showNotif(String message) {
+    _notifTimer?.cancel();
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _notifMessage = message;
+      _notifVisible = true;
+    });
+    _notifAnim.forward(from: 0);
+    _notifTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      _notifAnim.reverse().then((_) {
+        if (mounted) setState(() => _notifVisible = false);
+      });
+    });
   }
 
   void _handleJoinRoomAck(JoinRoomAckMessage ack) {
@@ -775,33 +813,26 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       },
       child: Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.background,
-        title: Image.asset(
-          'assets/images/logo.png',
-          height: 36,
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit, color: AppTheme.onSurfaceMuted),
-            tooltip: '닉네임 변경',
-            onPressed: _showNicknameDialog,
-          ),
-          if (_phase != _NodePhase.discovery)
-            IconButton(
-              icon: const Icon(Icons.logout, color: AppTheme.onSurfaceMuted),
-              tooltip: 'Disconnect',
-              onPressed: _disconnect,
-            ),
-        ],
-      ),
       body: Stack(
         children: [
-          switch (_phase) {
-            _NodePhase.discovery => _buildDiscovery(),
-            _NodePhase.lobby => _buildLobby(),
-            _NodePhase.inGame => _buildGameUI(),
-          },
+          Column(
+            children: [
+              // Minimal identity bar — shown in lobby and game phases instead
+              // of a full AppBar. Discovery screen manages its own header.
+              if (_phase != _NodePhase.discovery)
+                SafeArea(
+                  bottom: false,
+                  child: _buildIdentityBar(),
+                ),
+              Expanded(
+                child: switch (_phase) {
+                  _NodePhase.discovery => _buildDiscovery(),
+                  _NodePhase.lobby => _buildLobby(),
+                  _NodePhase.inGame => _buildGameUI(),
+                },
+              ),
+            ],
+          ),
           // Auto-skip warning banner (shown when an offline player's turn is
           // counting down to an automatic END_TURN).
           if (_autoSkipWarning != null) _buildAutoSkipBanner(_autoSkipWarning!),
@@ -813,6 +844,17 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
           ..._chatOverlays.asMap().entries.map(
                 (entry) => _buildChatOverlay(entry.value, entry.key),
               ),
+          // Action notification toast — shown when another player acts.
+          if (_notifVisible && _notifMessage != null)
+            Positioned(
+              bottom: 80,
+              left: 16,
+              right: 16,
+              child: FadeTransition(
+                opacity: _notifOpacity,
+                child: _buildNotifToast(_notifMessage!),
+              ),
+            ),
           // Sprint 3: disconnection overlay (only when not in discovery).
           if (_phase != _NodePhase.discovery &&
               _connState != WsConnectionState.connected)
@@ -821,6 +863,55 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
       ),
     ), // Scaffold
     ); // PopScope
+  }
+
+  // ---------------------------------------------------------------------------
+  // Identity bar — replaces AppBar during lobby/game phases
+  // ---------------------------------------------------------------------------
+
+  Widget _buildIdentityBar() {
+    final nickname = _identity?.nickname ?? '...';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: AppTheme.background,
+      child: Row(
+        children: [
+          const Icon(Icons.person_outline,
+              size: 16, color: AppTheme.onSurfaceMuted),
+          const SizedBox(width: 6),
+          Text(
+            nickname,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: _showNicknameDialog,
+            child: const Icon(Icons.edit,
+                size: 14, color: AppTheme.onSurfaceMuted),
+          ),
+          const Spacer(),
+          if (_phase != _NodePhase.discovery)
+            GestureDetector(
+              onTap: _disconnect,
+              child: const Row(
+                children: [
+                  Icon(Icons.logout, size: 16, color: AppTheme.onSurfaceMuted),
+                  SizedBox(width: 4),
+                  Text(
+                    '나가기',
+                    style: TextStyle(
+                        fontSize: 12, color: AppTheme.onSurfaceMuted),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -912,6 +1003,43 @@ class _GameNodeScreenState extends State<GameNodeScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotifToast(String message) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.onSurface.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.notifications_outlined,
+                size: 16, color: AppTheme.onPrimary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.onPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -402,7 +402,7 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final showVoteAction = _gameStarted && _boardView != null;
+    final inGame = _gameStarted && _boardView != null;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -416,65 +416,14 @@ class _GameboardScreenState extends State<GameboardScreen> {
       },
       child: Scaffold(
         backgroundColor: AppTheme.background,
-        appBar: AppBar(
-          backgroundColor: AppTheme.background,
-          title: Image.asset(
-            'assets/images/logo.png',
-            height: 36,
-          ),
-          actions: showVoteAction
-              ? [
-                  // Server status toggle
-                  IconButton(
-                    icon: Icon(
-                      Icons.people_outline,
-                      color: _showServerStatus
-                          ? AppTheme.primary
-                          : AppTheme.onSurfaceMuted,
-                    ),
-                    tooltip: '서버 상태',
-                    onPressed: () =>
-                        setState(() => _showServerStatus = !_showServerStatus),
-                  ),
-                  if (_voteInProgress)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppTheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(9999),
-                          ),
-                          child: const Text(
-                            '투표 진행 중...',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: AppTheme.onSecondaryContainer,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    TextButton.icon(
-                      icon: const Icon(Icons.stop_circle_outlined,
-                          color: AppTheme.error),
-                      label: const Text(
-                        '강제종료',
-                        style: TextStyle(
-                          color: AppTheme.error,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      onPressed: _onForceEndVote,
-                    ),
-                ]
-              : null,
-        ),
+        // Hide the AppBar during gameplay — controls are embedded in the
+        // board widget's phase header to avoid wasting a full line.
+        appBar: inGame
+            ? null
+            : AppBar(
+                backgroundColor: AppTheme.background,
+                title: Image.asset('assets/images/logo.png', height: 36),
+              ),
         body: _buildBody(),
       ),
     );
@@ -542,6 +491,11 @@ class _GameboardScreenState extends State<GameboardScreen> {
               playerNames: {
                 for (final p in _lobbyState.players) p.playerId: p.nickname
               },
+              voteInProgress: _voteInProgress,
+              showServerStatus: _showServerStatus,
+              onToggleServerStatus: () =>
+                  setState(() => _showServerStatus = !_showServerStatus),
+              onForceEndVote: _onForceEndVote,
               serverStatusWidget: _showServerStatus
                   ? ServerStatusWidget(
                       port: handle.port,

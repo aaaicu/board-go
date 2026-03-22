@@ -23,6 +23,8 @@ enum WsMessageType {
   turnAutoSkipWarning,
   // Node-to-node messaging (Sprint 6)
   nodeMessage,
+  // Action notifications — broadcast to non-actors when a turn action is processed
+  actionNotification,
   // Force-end vote (platform feature)
   forceEndVoteStart,
   forceEndVote,
@@ -48,6 +50,7 @@ enum WsMessageType {
         WsMessageType.playerReconnected => 'PLAYER_RECONNECTED',
         WsMessageType.turnAutoSkipWarning => 'TURN_AUTO_SKIP_WARNING',
         WsMessageType.nodeMessage => 'NODE_MESSAGE',
+        WsMessageType.actionNotification => 'ACTION_NOTIFICATION',
         WsMessageType.forceEndVoteStart => 'FORCE_END_VOTE_START',
         WsMessageType.forceEndVote => 'FORCE_END_VOTE',
         WsMessageType.forceEndVoteResult => 'FORCE_END_VOTE_RESULT',
@@ -73,6 +76,7 @@ enum WsMessageType {
         'PLAYER_RECONNECTED' => WsMessageType.playerReconnected,
         'TURN_AUTO_SKIP_WARNING' => WsMessageType.turnAutoSkipWarning,
         'NODE_MESSAGE' => WsMessageType.nodeMessage,
+        'ACTION_NOTIFICATION' => WsMessageType.actionNotification,
         'FORCE_END_VOTE_START' => WsMessageType.forceEndVoteStart,
         'FORCE_END_VOTE' => WsMessageType.forceEndVote,
         'FORCE_END_VOTE_RESULT' => WsMessageType.forceEndVoteResult,

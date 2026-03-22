@@ -663,6 +663,7 @@ class GameServer {
     // 9. Broadcast views
     // ------------------------------------------------------------------
     _broadcastViews();
+    _broadcastActionNotification(action.playerId);
 
     // ------------------------------------------------------------------
     // 10. Auto-save (Sprint 3) — fire-and-forget, never blocks the game loop
@@ -751,6 +752,28 @@ class GameServer {
     // After every state broadcast, check if the active player is offline and
     // start (or maintain) the auto-skip timer.
     _checkDisconnectedTurn();
+  }
+
+  /// Sends an [WsMessageType.actionNotification] to every connected player
+  /// except the actor, containing the latest log entry description.
+  ///
+  /// Called immediately after [_broadcastViews] so GameNode players can show
+  /// a toast notification for actions taken by other players.
+  void _broadcastActionNotification(String actorId) {
+    final log = _sessionState.log;
+    if (log.isEmpty) return;
+    final latest = log.last;
+    final notification = WsMessage(
+      type: WsMessageType.actionNotification,
+      payload: {
+        'description': latest.description,
+        'actorId': actorId,
+      },
+    );
+    _sessions.broadcast(
+      jsonEncode(notification.toJson()),
+      excludePlayerId: actorId,
+    );
   }
 
   /// Broadcasts the current lobby state to all connected players and notifies
