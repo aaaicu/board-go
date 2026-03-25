@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import '../../shared/game_pack/views/board_view.dart';
 import '../shared/app_theme.dart';
+import 'flame/board_world_game.dart';
+import 'flame/stockpile/stockpile_board_renderer.dart';
 
 // ---------------------------------------------------------------------------
 // Company metadata
@@ -38,7 +41,6 @@ const _companyImages = {
   'tot': 'assets/gamepacks/stockpile/image/TOT.png',
 };
 
-const _kCompanyOrder = ['aauto', 'epic', 'fed', 'lehm', 'sip', 'tot'];
 const _kDividendSentinel = -99;
 
 // ---------------------------------------------------------------------------
@@ -53,32 +55,6 @@ const _phaseLabels = {
   'movement': '주가 이동 단계',
   'information': '정보 단계',
 };
-
-// ---------------------------------------------------------------------------
-// Card display name helper
-// ---------------------------------------------------------------------------
-
-String _cardName(String cardId) {
-  if (cardId.startsWith('stock_')) {
-    final company = cardId.substring(6);
-    return '${_companyShort[company] ?? company} 주식';
-  }
-  if (cardId == 'fee_1000') return '수수료 \$1K';
-  if (cardId == 'fee_2000') return '수수료 \$2K';
-  if (cardId == 'action_boom') return 'Boom!';
-  if (cardId == 'action_bust') return 'Bust!';
-  return cardId;
-}
-
-// ---------------------------------------------------------------------------
-// Price colour helper
-// ---------------------------------------------------------------------------
-
-Color _priceColor(int price) {
-  if (price <= 3) return AppTheme.error;
-  if (price >= 9) return AppTheme.tertiary;
-  return AppTheme.onSurface;
-}
 
 // ---------------------------------------------------------------------------
 // Widget
@@ -131,6 +107,9 @@ class StockpileBoardWidget extends StatefulWidget {
 
 class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
     with SingleTickerProviderStateMixin {
+  // Flame
+  late final BoardWorldGame _boardGame;
+
   // Toast state
   String? _toastMessage;
   bool _toastVisible = false;
@@ -144,6 +123,13 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   @override
   void initState() {
     super.initState();
+    // Flame board setup
+    _boardGame = BoardWorldGame();
+    _boardGame.updateRenderer(
+      StockpileBoardRenderer(playerNames: widget.playerNames),
+    );
+
+    // Toast animation
     _toastAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -159,6 +145,13 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   @override
   void didUpdateWidget(StockpileBoardWidget old) {
     super.didUpdateWidget(old);
+
+    // Forward new board state to Flame
+    if (widget.boardView != old.boardView) {
+      _boardGame.updateBoardView(widget.boardView);
+    }
+
+    // Toast
     final log = widget.boardView.recentLog;
     if (log.isNotEmpty) {
       final latest = log.last.description;
@@ -188,6 +181,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   void dispose() {
     _toastTimer?.cancel();
     _toastAnim.dispose();
+    _boardGame.dispose();
     super.dispose();
   }
 
@@ -218,20 +212,27 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
             if (widget.serverStatusWidget != null) widget.serverStatusWidget!,
             const Divider(height: 1),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildPublicForecast(context),
-                    const SizedBox(height: 12),
-                    _buildStockPriceGrid(context),
-                    const SizedBox(height: 12),
-                    _buildStockpiles(context),
-                    const SizedBox(height: 12),
-                    _buildCashRow(context),
-                  ],
-                ),
+              child: Stack(
+                children: [
+                  // Flame board — fills the play area
+                  GameWidget(game: _boardGame),
+                  // Public forecast banner — top overlay
+                  if (_publicForecast.isNotEmpty)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      right: 8,
+                      child: _buildPublicForecast(context),
+                    ),
+                  // Player cash strip — bottom overlay
+                  if (_cash.isNotEmpty)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      right: 8,
+                      child: _buildCashRow(context),
+                    ),
+                ],
               ),
             ),
           ],
@@ -417,182 +418,6 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   }
 
   // ---------------------------------------------------------------------------
-  // Stock price grid
-  // ---------------------------------------------------------------------------
-
-  Widget _buildStockPriceGrid(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('주가',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: AppTheme.onSurface)),
-        const SizedBox(height: 6),
-        Row(
-          children: _kCompanyOrder.map((company) {
-            final price = _stockPrices[company] ?? 0;
-            final color = _companyColors[company] ?? Colors.grey;
-            final short = _companyShort[company] ?? company.toUpperCase();
-            return Expanded(
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: color.withValues(alpha: 0.5)),
-                ),
-                child: Column(
-                  children: [
-                    // Company illustration
-                    if (_companyImages[company] != null)
-                      Image.asset(
-                        _companyImages[company]!,
-                        height: 60,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      )
-                    else
-                      Container(
-                        height: 60,
-                        color: color.withValues(alpha: 0.2),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 6),
-                      child: Column(
-                        children: [
-                          Text(
-                            short,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: color,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '\$$price',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: _priceColor(price),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Stockpile cards
-  // ---------------------------------------------------------------------------
-
-  Widget _buildStockpiles(BuildContext context) {
-    if (_stockpiles.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('주식 더미',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: AppTheme.onSurface)),
-        const SizedBox(height: 6),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: _stockpiles.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final sp = entry.value;
-            return Expanded(child: _buildSingleStockpile(context, idx, sp));
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSingleStockpile(
-    BuildContext context,
-    int index,
-    Map<String, dynamic> sp,
-  ) {
-    final faceUpCards = List<String>.from(sp['faceUpCards'] as List? ?? []);
-    final faceDownCount = sp['faceDownCount'] as int? ?? 0;
-    final currentBid = sp['currentBid'] as int? ?? 0;
-    final bidderId = sp['currentBidderId'] as String?;
-    final bidderName =
-        bidderId != null ? (widget.playerNames[bidderId] ?? bidderId) : null;
-
-    return Card(
-      margin: const EdgeInsets.only(right: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '더미 ${index + 1}',
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-            const SizedBox(height: 4),
-            // Face-up cards
-            if (faceUpCards.isNotEmpty)
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: faceUpCards.map((c) => _buildCardChip(c)).toList(),
-              ),
-            // Face-down placeholder
-            if (faceDownCount > 0)
-              Chip(
-                label: Text(
-                  '뒷면 $faceDownCount장',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                backgroundColor: AppTheme.surfaceContainerHigh,
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-              ),
-            if (faceUpCards.isEmpty && faceDownCount == 0)
-              const Text('(비어 있음)',
-                  style: TextStyle(
-                      fontSize: 11, color: AppTheme.onSurfaceMuted)),
-            const Divider(height: 12),
-            // Bid info
-            if (currentBid > 0 && bidderName != null) ...[
-              Text(
-                '입찰: \$${_formatCash(currentBid)}',
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '입찰자: $bidderName',
-                style: const TextStyle(fontSize: 11),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ] else
-              const Text(
-                '입찰 없음',
-                style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Player cash row
   // ---------------------------------------------------------------------------
 
@@ -676,71 +501,4 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
     return '$amount';
   }
 
-  /// Renders a single face-up card in a stockpile.
-  /// Stock cards show the company illustration; other cards use a text chip.
-  Widget _buildCardChip(String cardId) {
-    if (cardId.startsWith('stock_')) {
-      final company = cardId.substring(6);
-      final color = _companyColors[company] ?? Colors.grey;
-      final short = _companyShort[company] ?? company.toUpperCase();
-      final imgPath = _companyImages[company];
-      return Container(
-        width: 44,
-        decoration: BoxDecoration(
-          border: Border.all(color: color.withValues(alpha: 0.6)),
-          borderRadius: BorderRadius.circular(6),
-          color: color.withValues(alpha: 0.08),
-        ),
-        child: Column(
-          children: [
-            if (imgPath != null)
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(5)),
-                child: Image.asset(imgPath,
-                    height: 32, width: 44, fit: BoxFit.cover),
-              )
-            else
-              Container(
-                  height: 32,
-                  width: 44,
-                  color: color.withValues(alpha: 0.2)),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                short,
-                style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: color),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    // Fee / action cards — plain chip
-    Color chipColor = AppTheme.surfaceContainerHigh;
-    Color textColor = AppTheme.onSurface;
-    if (cardId == 'action_boom') {
-      chipColor = AppTheme.tertiaryContainer;
-      textColor = AppTheme.onTertiaryContainer;
-    } else if (cardId == 'action_bust') {
-      chipColor = AppTheme.errorContainer;
-      textColor = AppTheme.error;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: chipColor,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        _cardName(cardId),
-        style: TextStyle(
-            fontSize: 10, fontWeight: FontWeight.w600, color: textColor),
-      ),
-    );
-  }
 }
