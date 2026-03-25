@@ -27,6 +27,15 @@ const _companyColors = {
   'tot': Color(0xFFE87D9A), // muted pink
 };
 
+const _companyImages = {
+  'aauto': 'assets/gamepacks/stockpile/image/AAUTO.png',
+  'epic': 'assets/gamepacks/stockpile/image/EPIC.png',
+  'fed': 'assets/gamepacks/stockpile/image/FED.png',
+  'lehm': 'assets/gamepacks/stockpile/image/LEHM.png',
+  'sip': 'assets/gamepacks/stockpile/image/SIP.png',
+  'tot': 'assets/gamepacks/stockpile/image/TOT.png',
+};
+
 const _kDividendSentinel = -99;
 
 // ---------------------------------------------------------------------------
@@ -70,10 +79,13 @@ String _formatCash(int amount) {
 const _kPlaceFaceUp = 'PLACE_FACE_UP';
 const _kPlaceFaceDown = 'PLACE_FACE_DOWN';
 const _kBid = 'BID';
+const _kDemandPass = 'DEMAND_PASS';
 const _kEndPhase = 'END_PHASE';
 const _kUseBoom = 'USE_BOOM';
 const _kUseBust = 'USE_BUST';
 const _kSellStock = 'SELL_STOCK';
+
+const _kMaxBidAmount = 25000;
 
 // ---------------------------------------------------------------------------
 // StockpilePlayerWidget
@@ -83,14 +95,14 @@ const _kSellStock = 'SELL_STOCK';
 ///
 /// Detects the current game phase from [PlayerView.data]['phase'] and renders
 /// the appropriate context-aware controls:
-///   - supply → card placement buttons
+///   - supply → 2-step card selection then pile selection
 ///   - demand → bid buttons with custom amount dialog
 ///   - action → boom / bust action buttons
 ///   - selling → sell stock buttons
 ///   - (other) → waiting indicator
 ///
 /// Always shows private forecast and pending fees at the bottom.
-class StockpilePlayerWidget extends StatelessWidget {
+class StockpilePlayerWidget extends StatefulWidget {
   final PlayerView playerView;
 
   /// Called when the player performs an action.
@@ -103,14 +115,23 @@ class StockpilePlayerWidget extends StatelessWidget {
     required this.onAction,
   });
 
+  @override
+  State<StockpilePlayerWidget> createState() => _StockpilePlayerWidgetState();
+}
+
+class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
+  /// Index into [playerView.hand] selected in step 1 of the supply phase.
+  /// Null means step 1 (card selection); non-null means step 2 (pile selection).
+  int? _selectedCardIndex;
+
   // ---------------------------------------------------------------------------
   // Typed data accessors
   // ---------------------------------------------------------------------------
 
-  Map<String, dynamic> get _data => playerView.data;
+  Map<String, dynamic> get _data => widget.playerView.data;
   String get _phase => _data['phase'] as String? ?? '';
   Set<String> get _allowedTypes =>
-      playerView.allowedActions.map((a) => a.actionType).toSet();
+      widget.playerView.allowedActions.map((a) => a.actionType).toSet();
 
   bool _hasAction(String type) => _allowedTypes.contains(type);
 
@@ -131,8 +152,33 @@ class StockpilePlayerWidget extends StatelessWidget {
             (_data['supplyPlaced'] as Map?)?['faceDown'] as bool? ?? false,
       };
 
+  int get _demandRound => _data['demandRound'] as int? ?? 1;
+  bool get _isRebidRound => _demandRound > 1;
+  List<String> get _outbidPlayers =>
+      List<String>.from(_data['outbidPlayers'] as List? ?? []);
+  bool get _isOutbid =>
+      _outbidPlayers.contains(widget.playerView.playerId);
+
   // Cash for this player (from scores, which hold cash in Stockpile)
-  int get _myCash => playerView.scores[playerView.playerId] ?? 0;
+  int get _myCash => widget.playerView.scores[widget.playerView.playerId] ?? 0;
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
+  @override
+  void didUpdateWidget(StockpilePlayerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reset card selection when the hand changes (e.g. after placing a card).
+    if (oldWidget.playerView.hand.length != widget.playerView.hand.length) {
+      _selectedCardIndex = null;
+    }
+  }
+
+  void _onAction(String type, Map<String, dynamic> params) {
+    setState(() => _selectedCardIndex = null);
+    widget.onAction(type, params);
+  }
 
   // ---------------------------------------------------------------------------
   // Build
@@ -165,12 +211,10 @@ class StockpilePlayerWidget extends StatelessWidget {
   // ---------------------------------------------------------------------------
 
   Widget _buildPhaseSection(BuildContext context) {
-    // Prefer allowedActions to determine which phase controls to show, since
-    // the player might be waiting (empty actions) even if phase is 'supply'.
     if (_hasAction(_kPlaceFaceUp) || _hasAction(_kPlaceFaceDown)) {
       return _buildSupplyPhase(context);
     }
-    if (_hasAction(_kBid)) {
+    if (_hasAction(_kBid) || _hasAction(_kDemandPass)) {
       return _buildDemandPhase(context);
     }
     if (_hasAction(_kUseBoom) || _hasAction(_kUseBust)) {
@@ -186,12 +230,17 @@ class StockpilePlayerWidget extends StatelessWidget {
       return _buildSellingPhase(context);
     }
 
+    // Waiting: show outbid banner if applicable so the player knows why.
+    if (_phase == 'demand' && _isOutbid) {
+      return _buildDemandWaitingOutbid(context);
+    }
+
     // No allowed actions — waiting for other players.
     return _buildWaiting(context);
   }
 
   // ---------------------------------------------------------------------------
-  // Supply phase
+  // Supply phase — 2-step UX
   // ---------------------------------------------------------------------------
 
   Widget _buildSupplyPhase(BuildContext context) {
@@ -199,100 +248,175 @@ class StockpilePlayerWidget extends StatelessWidget {
     final hasPlacedFaceUp = placed['faceUp'] ?? false;
     final hasPlacedFaceDown = placed['faceDown'] ?? false;
 
-    // Gather per-pile, per-placement-type actions from allowedActions.
-    final faceUpActions = playerView.allowedActions
+    final faceUpActions = widget.playerView.allowedActions
         .where((a) => a.actionType == _kPlaceFaceUp)
         .toList();
-    final faceDownActions = playerView.allowedActions
+    final faceDownActions = widget.playerView.allowedActions
         .where((a) => a.actionType == _kPlaceFaceDown)
         .toList();
 
-    // Derive available cards from the hand.
-    final hand = playerView.hand;
+    final hand = widget.playerView.hand;
+
+    final subtitle = _selectedCardIndex == null
+        ? '놓을 카드를 선택하세요'
+        : '어느 더미에 놓을지 선택하세요';
 
     return _PhaseCard(
       title: '공급 단계',
-      subtitle: '카드를 더미에 놓으세요',
+      subtitle: subtitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Hand preview
-          if (hand.isNotEmpty) ...[
-            const Text('내 카드:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              children: hand
-                  .map((c) => Chip(
-                        label: Text(_cardName(c),
-                            style: const TextStyle(fontSize: 12)),
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(height: 10),
-          ],
-
-          // Placement status indicators
+          // Placement status badges
           Row(
             children: [
-              _StatusBadge(
-                label: '앞면 놓기',
-                done: hasPlacedFaceUp,
-              ),
+              _StatusBadge(label: '앞면 놓기', done: hasPlacedFaceUp),
               const SizedBox(width: 8),
-              _StatusBadge(
-                label: '뒷면 놓기',
-                done: hasPlacedFaceDown,
-              ),
+              _StatusBadge(label: '뒷면 놓기', done: hasPlacedFaceDown),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // Face-up placement buttons
-          if (!hasPlacedFaceUp && faceUpActions.isNotEmpty) ...[
-            const Text('앞면으로 놓기:',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            const SizedBox(height: 4),
-            _buildSupplyButtons(
-                context, faceUpActions, AppTheme.primaryContainer),
-            const SizedBox(height: 8),
-          ],
-
-          // Face-down placement buttons
-          if (!hasPlacedFaceDown && faceDownActions.isNotEmpty) ...[
-            const Text('뒷면으로 놓기:',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            const SizedBox(height: 4),
-            _buildSupplyButtons(
-                context, faceDownActions, AppTheme.surfaceContainerHigh),
-          ],
+          if (_selectedCardIndex == null)
+            // ── Step 1: show hand cards as tappable tiles ──────────────────
+            _buildCardSelection(hand, faceUpActions, faceDownActions)
+          else
+            // ── Step 2: show pile-selection buttons for selected card ───────
+            _buildPileSelection(
+              hand,
+              _selectedCardIndex!,
+              faceUpActions,
+              faceDownActions,
+              hasPlacedFaceUp,
+              hasPlacedFaceDown,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildSupplyButtons(
-    BuildContext context,
-    List<dynamic> actions,
-    Color color,
+  /// Step 1 — horizontal list of hand cards; tappable if actions exist for them.
+  Widget _buildCardSelection(
+    List<String> hand,
+    List<dynamic> faceUpActions,
+    List<dynamic> faceDownActions,
   ) {
+    if (hand.isEmpty) {
+      return const Text(
+        '카드 없음',
+        style: TextStyle(color: AppTheme.onSurfaceMuted),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: hand.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final cardId = entry.value;
+          final hasActions = faceUpActions.any(
+                (a) => (a.params['cardIndex'] as int?) == idx,
+              ) ||
+              faceDownActions.any(
+                (a) => (a.params['cardIndex'] as int?) == idx,
+              );
+
+          return GestureDetector(
+            onTap: hasActions
+                ? () => setState(() => _selectedCardIndex = idx)
+                : null,
+            child: _buildHandCard(
+              cardId,
+              selected: false,
+              dimmed: !hasActions,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Step 2 — selected card preview + pile buttons filtered by card index.
+  Widget _buildPileSelection(
+    List<String> hand,
+    int cardIdx,
+    List<dynamic> faceUpActions,
+    List<dynamic> faceDownActions,
+    bool hasPlacedFaceUp,
+    bool hasPlacedFaceDown,
+  ) {
+    final selectedCard = hand[cardIdx];
+
+    final cardFaceUpActions = faceUpActions
+        .where((a) => (a.params['cardIndex'] as int?) == cardIdx)
+        .toList();
+    final cardFaceDownActions = faceDownActions
+        .where((a) => (a.params['cardIndex'] as int?) == cardIdx)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Selected card + cancel
+        Row(
+          children: [
+            _buildHandCard(selectedCard, selected: true),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              icon: const Icon(Icons.close, size: 16),
+              label: const Text('취소'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.onSurfaceMuted,
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+              onPressed: () => setState(() => _selectedCardIndex = null),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Face-up pile buttons
+        if (!hasPlacedFaceUp && cardFaceUpActions.isNotEmpty) ...[
+          const Text(
+            '앞면으로 놓기:',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          _buildPileButtons(cardFaceUpActions, AppTheme.primaryContainer),
+          const SizedBox(height: 10),
+        ],
+
+        // Face-down pile buttons
+        if (!hasPlacedFaceDown && cardFaceDownActions.isNotEmpty) ...[
+          const Text(
+            '뒷면으로 놓기:',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          _buildPileButtons(
+              cardFaceDownActions, AppTheme.surfaceContainerHigh),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPileButtons(List<dynamic> actions, Color color) {
     return Wrap(
-      spacing: 6,
+      spacing: 8,
       runSpacing: 6,
       children: actions.map((action) {
+        final pileIdx =
+            (action.params['stockpileIndex'] as int? ?? 0) + 1;
         return ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: color,
             foregroundColor: AppTheme.onSurface,
-            textStyle: const TextStyle(fontSize: 12),
+            textStyle: const TextStyle(fontSize: 13),
             padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           ),
-          onPressed: () => onAction(action.actionType, action.params),
-          child: Text(action.label),
+          onPressed: () => _onAction(action.actionType, action.params),
+          child: Text('더미 $pileIdx'),
         );
       }).toList(),
     );
@@ -304,94 +428,293 @@ class StockpilePlayerWidget extends StatelessWidget {
 
   Widget _buildDemandPhase(BuildContext context) {
     final myBid = _myBid;
+    final canPass = _hasAction(_kDemandPass);
 
-    // Distinct stockpile indices from BID actions.
     final bidsByPile = <int, List<dynamic>>{};
-    for (final a in playerView.allowedActions
+    for (final a in widget.playerView.allowedActions
         .where((a) => a.actionType == _kBid)) {
       final idx = a.params['stockpileIndex'] as int? ?? 0;
       bidsByPile.putIfAbsent(idx, () => []).add(a);
     }
 
+    final subtitle = _isRebidRound
+        ? '재입찰 라운드 (${_demandRound - 1}회차) — 더 높게 입찰하거나 통과하세요'
+        : '원하는 더미에 입찰하세요';
+
     return _PhaseCard(
       title: '수요 단계',
-      subtitle: '입찰하세요',
+      subtitle: subtitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Current cash
-          Row(
-            children: [
-              const Icon(Icons.account_balance_wallet, size: 18),
-              const SizedBox(width: 6),
-              Text(
-                '보유 현금: ${_formatCash(_myCash)}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+          // 재입찰 알림 배너
+          if (_isOutbid) ...[
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.errorContainer,
+                borderRadius: BorderRadius.circular(10),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 18, color: AppTheme.error),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '다른 플레이어에게 밀렸습니다! 재입찰하세요',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
 
-          // Per-pile bid buttons
+          // 보유 현금 칩
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.account_balance_wallet,
+                    size: 16, color: AppTheme.tertiary),
+                const SizedBox(width: 8),
+                Text(
+                  '보유 현금',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.onSurfaceMuted),
+                ),
+                const Spacer(),
+                Text(
+                  _formatCash(_myCash),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.tertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 더미별 입찰 카드
           ...bidsByPile.entries.map((entry) {
             final pileIdx = entry.key;
             final pileActions = entry.value;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+
+            // 최소 입찰 vs 전액 입찰 분리
+            pileActions.sort((a, b) {
+              final aAmt = a.params['amount'] as int? ?? 0;
+              final bAmt = b.params['amount'] as int? ?? 0;
+              return aAmt.compareTo(bAmt);
+            });
+            final minAction =
+                pileActions.isNotEmpty ? pileActions.first : null;
+            final allInAction =
+                pileActions.length > 1 ? pileActions.last : null;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('더미 ${pileIdx + 1}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13)),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
+                  // 더미 번호 배지
+                  Row(
                     children: [
-                      // Pre-built bid buttons from allowedActions
-                      ...pileActions.map((a) => ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              textStyle: const TextStyle(fontSize: 12),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8),
-                            ),
-                            onPressed: () =>
-                                onAction(a.actionType, a.params),
-                            child: Text(a.label),
-                          )),
-                      // Custom amount button
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.edit, size: 14),
-                        label: const Text('직접 입력',
-                            style: TextStyle(fontSize: 12)),
-                        onPressed: () => _showBidDialog(
-                            context, pileIdx),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '더미 ${pileIdx + 1}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primary,
+                          ),
+                        ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 입찰 버튼 행
+                  Row(
+                    children: [
+                      if (minAction != null)
+                        Expanded(
+                          child: _BidButton(
+                            label: '최소 입찰',
+                            amount: _formatCash(
+                                minAction.params['amount'] as int? ?? 0),
+                            isPrimary: false,
+                            onTap: () =>
+                                _onAction(minAction.actionType, minAction.params),
+                          ),
+                        ),
+                      if (minAction != null && allInAction != null)
+                        const SizedBox(width: 8),
+                      if (allInAction != null)
+                        Expanded(
+                          child: _BidButton(
+                            label: '전액 입찰',
+                            amount: _formatCash(
+                                allInAction.params['amount'] as int? ?? 0),
+                            isPrimary: true,
+                            onTap: () => _onAction(
+                                allInAction.actionType, allInAction.params),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // 직접 입력 (텍스트 버튼)
+                  GestureDetector(
+                    onTap: () => _showBidDialog(context, pileIdx),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.edit, size: 13,
+                            color: AppTheme.onSurfaceMuted),
+                        SizedBox(width: 4),
+                        Text(
+                          '직접 입력',
+                          style: TextStyle(
+                              fontSize: 12, color: AppTheme.onSurfaceMuted),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             );
           }),
 
-          // Current bid summary
+          // 내 현재 입찰 표시
           if (myBid != null) ...[
-            const Divider(),
-            Row(
+            const SizedBox(height: 4),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.gavel,
+                      size: 16, color: AppTheme.secondary),
+                  const SizedBox(width: 8),
+                  Text(
+                    '현재 입찰 — 더미 ${(myBid['stockpileIndex'] as int) + 1}',
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.onSecondaryContainer),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _formatCash(myBid['amount'] as int? ?? 0),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // 재입찰 통과 버튼 (rebid round에서만)
+          if (canPass) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.onSurfaceMuted,
+                side: const BorderSide(color: AppTheme.outlineVariant),
+                textStyle: const TextStyle(fontSize: 13),
+              ),
+              icon: const Icon(Icons.skip_next, size: 18),
+              label: const Text('이번 라운드 통과'),
+              onPressed: () => _onAction(_kDemandPass, {}),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Shown when the player is outbid but it is not yet their rebid turn.
+  Widget _buildDemandWaitingOutbid(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.errorContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 18, color: AppTheme.error),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '다른 플레이어에게 밀렸습니다! 재입찰 순서를 기다리세요',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.gavel, size: 16, color: AppTheme.secondary),
-                const SizedBox(width: 6),
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
                 Text(
-                  '내 입찰: 더미 ${(myBid['stockpileIndex'] as int) + 1} — '
-                  '${_formatCash(myBid['amount'] as int? ?? 0)}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, color: AppTheme.secondary),
+                  '재입찰 차례를 기다리는 중...',
+                  style: TextStyle(color: AppTheme.onSurfaceMuted),
                 ),
               ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -406,7 +729,8 @@ class StockpilePlayerWidget extends StatelessWidget {
           controller: controller,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
-            hintText: '입찰 금액 (최대 ${_formatCash(_myCash)})',
+            hintText:
+                '입찰 금액 (최대 \$25K)',
             prefixText: '\$',
           ),
           autofocus: true,
@@ -426,8 +750,9 @@ class StockpilePlayerWidget extends StatelessWidget {
         ],
       ),
     );
-    if (amount != null && amount >= 0 && amount <= _myCash) {
-      onAction(_kBid, {'stockpileIndex': pileIndex, 'amount': amount});
+    if (amount != null && amount >= 0 && amount <= _myCash &&
+        amount <= _kMaxBidAmount) {
+      _onAction(_kBid, {'stockpileIndex': pileIndex, 'amount': amount});
     }
   }
 
@@ -438,10 +763,10 @@ class StockpilePlayerWidget extends StatelessWidget {
   Widget _buildActionPhase(BuildContext context) {
     final hasBoom = _actionCards.contains('action_boom');
     final hasBust = _actionCards.contains('action_bust');
-    final boomActions = playerView.allowedActions
+    final boomActions = widget.playerView.allowedActions
         .where((a) => a.actionType == _kUseBoom)
         .toList();
-    final bustActions = playerView.allowedActions
+    final bustActions = widget.playerView.allowedActions
         .where((a) => a.actionType == _kUseBust)
         .toList();
     final canEndPhase = _hasAction(_kEndPhase);
@@ -452,7 +777,6 @@ class StockpilePlayerWidget extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Held action cards summary
           if (hasBoom || hasBust) ...[
             const Text('내 액션 카드:',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -463,7 +787,8 @@ class StockpilePlayerWidget extends StatelessWidget {
                 if (hasBoom)
                   const Chip(
                     label: Text('Boom!',
-                        style: TextStyle(color: AppTheme.onTertiaryContainer)),
+                        style:
+                            TextStyle(color: AppTheme.onTertiaryContainer)),
                     backgroundColor: AppTheme.tertiaryContainer,
                   ),
                 if (hasBust)
@@ -477,7 +802,6 @@ class StockpilePlayerWidget extends StatelessWidget {
             const SizedBox(height: 10),
           ],
 
-          // Boom actions
           if (boomActions.isNotEmpty) ...[
             const Text('Boom! 사용 (주가 상승):',
                 style: TextStyle(
@@ -497,8 +821,7 @@ class StockpilePlayerWidget extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 8),
                         ),
-                        onPressed: () =>
-                            onAction(a.actionType, a.params),
+                        onPressed: () => _onAction(a.actionType, a.params),
                         child: Text(
                             _companyShort[a.params['company']] ??
                                 a.params['company'] as String? ??
@@ -509,7 +832,6 @@ class StockpilePlayerWidget extends StatelessWidget {
             const SizedBox(height: 8),
           ],
 
-          // Bust actions
           if (bustActions.isNotEmpty) ...[
             const Text('Bust! 사용 (주가 하락):',
                 style: TextStyle(
@@ -529,8 +851,7 @@ class StockpilePlayerWidget extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 8),
                         ),
-                        onPressed: () =>
-                            onAction(a.actionType, a.params),
+                        onPressed: () => _onAction(a.actionType, a.params),
                         child: Text(
                             _companyShort[a.params['company']] ??
                                 a.params['company'] as String? ??
@@ -541,7 +862,6 @@ class StockpilePlayerWidget extends StatelessWidget {
             const SizedBox(height: 8),
           ],
 
-          // End phase
           if (canEndPhase)
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -550,7 +870,7 @@ class StockpilePlayerWidget extends StatelessWidget {
               ),
               icon: const Icon(Icons.done, size: 18),
               label: const Text('액션 완료'),
-              onPressed: () => onAction(_kEndPhase, {}),
+              onPressed: () => _onAction(_kEndPhase, {}),
             ),
         ],
       ),
@@ -562,14 +882,10 @@ class StockpilePlayerWidget extends StatelessWidget {
   // ---------------------------------------------------------------------------
 
   Widget _buildSellingPhase(BuildContext context) {
-    // Prices are not directly in PlayerView — the server owns price computation.
-    // Display share counts; the server will calculate proceeds when SELL_STOCK arrives.
-    final normalHoldings = _portfolio.entries
-        .where((e) => e.value > 0)
-        .toList();
-    final splitHoldings = _splitPortfolio.entries
-        .where((e) => e.value > 0)
-        .toList();
+    final normalHoldings =
+        _portfolio.entries.where((e) => e.value > 0).toList();
+    final splitHoldings =
+        _splitPortfolio.entries.where((e) => e.value > 0).toList();
     final canEndPhase = _hasAction(_kEndPhase);
 
     return _PhaseCard(
@@ -578,7 +894,6 @@ class StockpilePlayerWidget extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Normal holdings
           if (normalHoldings.isNotEmpty) ...[
             const Text('내 포트폴리오 (일반):',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -587,9 +902,8 @@ class StockpilePlayerWidget extends StatelessWidget {
               final company = e.key;
               final count = e.value;
               final color = _companyColors[company] ?? Colors.grey;
-              final short =
-                  _companyShort[company] ?? company.toUpperCase();
-              final canSell = playerView.allowedActions.any((a) =>
+              final short = _companyShort[company] ?? company.toUpperCase();
+              final canSell = widget.playerView.allowedActions.any((a) =>
                   a.actionType == _kSellStock &&
                   a.params['company'] == company &&
                   a.params['type'] == 'normal');
@@ -598,15 +912,14 @@ class StockpilePlayerWidget extends StatelessWidget {
                 color: color,
                 canSell: canSell,
                 onSell: canSell
-                    ? () => onAction(_kSellStock,
-                        {'company': company, 'type': 'normal'})
+                    ? () => _onAction(
+                        _kSellStock, {'company': company, 'type': 'normal'})
                     : null,
               );
             }),
             const SizedBox(height: 8),
           ],
 
-          // Split holdings
           if (splitHoldings.isNotEmpty) ...[
             const Text('내 포트폴리오 (분할주):',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -615,9 +928,8 @@ class StockpilePlayerWidget extends StatelessWidget {
               final company = e.key;
               final count = e.value;
               final color = _companyColors[company] ?? Colors.grey;
-              final short =
-                  _companyShort[company] ?? company.toUpperCase();
-              final canSell = playerView.allowedActions.any((a) =>
+              final short = _companyShort[company] ?? company.toUpperCase();
+              final canSell = widget.playerView.allowedActions.any((a) =>
                   a.actionType == _kSellStock &&
                   a.params['company'] == company &&
                   a.params['type'] == 'split');
@@ -627,8 +939,8 @@ class StockpilePlayerWidget extends StatelessWidget {
                 isSplit: true,
                 canSell: canSell,
                 onSell: canSell
-                    ? () => onAction(_kSellStock,
-                        {'company': company, 'type': 'split'})
+                    ? () => _onAction(
+                        _kSellStock, {'company': company, 'type': 'split'})
                     : null,
               );
             }),
@@ -644,7 +956,6 @@ class StockpilePlayerWidget extends StatelessWidget {
               ),
             ),
 
-          // End phase
           if (canEndPhase)
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -653,7 +964,7 @@ class StockpilePlayerWidget extends StatelessWidget {
               ),
               icon: const Icon(Icons.done, size: 18),
               label: const Text('매매 완료'),
-              onPressed: () => onAction(_kEndPhase, {}),
+              onPressed: () => _onAction(_kEndPhase, {}),
             ),
         ],
       ),
@@ -759,11 +1070,21 @@ class StockpilePlayerWidget extends StatelessWidget {
     final short = _companyShort[company] ?? company.toUpperCase();
     final changeStr = _forecastChangeStr(change);
     final changeColor = _forecastChangeColor(change);
+    final imgPath = _companyImages[company];
 
     return Row(
       children: [
-        Icon(Icons.trending_up, size: 14, color: color),
-        const SizedBox(width: 4),
+        if (imgPath != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.asset(imgPath,
+                width: 24, height: 24, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 6),
+        ] else ...[
+          Icon(Icons.trending_up, size: 14, color: color),
+          const SizedBox(width: 4),
+        ],
         Text(
           '$short ',
           style: TextStyle(
@@ -784,6 +1105,159 @@ class StockpilePlayerWidget extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Private helper widgets
 // ---------------------------------------------------------------------------
+
+/// Renders a hand card — stock cards show company illustration, others a chip.
+/// [selected] draws a highlighted border; [dimmed] reduces opacity.
+Widget _buildHandCard(
+  String cardId, {
+  bool selected = false,
+  bool dimmed = false,
+}) {
+  Widget card;
+
+  if (cardId.startsWith('stock_')) {
+    final company = cardId.substring(6);
+    final color = _companyColors[company] ?? Colors.grey;
+    final short = _companyShort[company] ?? company.toUpperCase();
+    final imgPath = _companyImages[company];
+
+    final borderColor = selected
+        ? color
+        : color.withValues(alpha: dimmed ? 0.3 : 0.7);
+    final bgColor = selected
+        ? color.withValues(alpha: 0.18)
+        : color.withValues(alpha: dimmed ? 0.02 : 0.06);
+
+    card = Container(
+      width: 64,
+      margin: const EdgeInsets.only(right: 10),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: borderColor,
+          width: selected ? 2.5 : 1.5,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        color: bgColor,
+      ),
+      child: Column(
+        children: [
+          if (imgPath != null)
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(7)),
+              child: Image.asset(imgPath,
+                  height: 52, width: 64, fit: BoxFit.cover),
+            )
+          else
+            Container(
+                height: 52,
+                color: color.withValues(alpha: dimmed ? 0.1 : 0.2)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              short,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: dimmed
+                    ? color.withValues(alpha: 0.4)
+                    : color,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  } else {
+    // Fee / action cards — compact chip
+    Color bg = AppTheme.surfaceContainerHigh;
+    Color fg = AppTheme.onSurface;
+    if (cardId == 'action_boom') {
+      bg = AppTheme.tertiaryContainer;
+      fg = AppTheme.onTertiaryContainer;
+    } else if (cardId == 'action_bust') {
+      bg = AppTheme.errorContainer;
+      fg = AppTheme.error;
+    }
+
+    card = Container(
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: selected ? bg : bg.withValues(alpha: dimmed ? 0.4 : 1.0),
+        borderRadius: BorderRadius.circular(8),
+        border: selected
+            ? Border.all(color: fg, width: 2)
+            : null,
+      ),
+      child: Text(
+        _cardName(cardId),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: dimmed ? fg.withValues(alpha: 0.4) : fg,
+        ),
+      ),
+    );
+  }
+
+  return card;
+}
+
+/// 입찰 버튼 — 라벨(최소/전액)과 금액을 세로로 표시.
+class _BidButton extends StatelessWidget {
+  final String label;
+  final String amount;
+  final bool isPrimary;
+  final VoidCallback onTap;
+
+  const _BidButton({
+    required this.label,
+    required this.amount,
+    required this.isPrimary,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg =
+        isPrimary ? AppTheme.primaryContainer : AppTheme.surfaceContainerHigh;
+    final fg = isPrimary ? AppTheme.primary : AppTheme.onSurface;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: fg.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              amount,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: fg,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Titled card wrapper used for each phase section.
 class _PhaseCard extends StatelessWidget {
@@ -871,18 +1345,34 @@ class _HoldingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final companyKey = _companyShort.entries
+        .firstWhere(
+          (e) => label.startsWith(e.value),
+          orElse: () => const MapEntry('', ''),
+        )
+        .key;
+    final imgPath =
+        companyKey.isNotEmpty ? _companyImages[companyKey] : null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
+          if (imgPath != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.asset(imgPath,
+                  width: 28, height: 28, fit: BoxFit.cover),
+            )
+          else
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

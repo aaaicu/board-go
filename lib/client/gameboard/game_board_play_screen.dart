@@ -25,11 +25,19 @@ class GameBoardPlayScreen extends StatelessWidget {
   final Set<String> offlinePlayerIds;
 
   /// Optional server status widget provided by the platform.
-  ///
-  /// Non-null when the host has toggled the server-status overlay on.
-  /// Game-pack board widgets should embed this wherever it fits their layout,
-  /// or pass it down to a sub-widget.  When null the widget is hidden.
   final Widget? serverStatusWidget;
+
+  /// True while a force-end vote is in progress.
+  final bool voteInProgress;
+
+  /// True when the server-status overlay is visible.
+  final bool showServerStatus;
+
+  /// Called when the host taps the server-status toggle button.
+  final VoidCallback? onToggleServerStatus;
+
+  /// Called when the host taps the force-end button.
+  final VoidCallback? onForceEndVote;
 
   const GameBoardPlayScreen({
     super.key,
@@ -37,6 +45,10 @@ class GameBoardPlayScreen extends StatelessWidget {
     this.playerNames = const {},
     this.offlinePlayerIds = const {},
     this.serverStatusWidget,
+    this.voteInProgress = false,
+    this.showServerStatus = false,
+    this.onToggleServerStatus,
+    this.onForceEndVote,
   });
 
   @override
@@ -47,6 +59,10 @@ class GameBoardPlayScreen extends StatelessWidget {
         boardView: boardView,
         playerNames: playerNames,
         serverStatusWidget: serverStatusWidget,
+        voteInProgress: voteInProgress,
+        showServerStatus: showServerStatus,
+        onToggleServerStatus: onToggleServerStatus,
+        onForceEndVote: onForceEndVote,
       );
     }
 

@@ -22,8 +22,8 @@ class BoardGoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'board-go',
-      theme: AppTheme.light(),
-      themeMode: ThemeMode.light,
+      theme: AppTheme.dark(),
+      themeMode: ThemeMode.dark,
       home: const RoleSelectScreen(),
     );
   }

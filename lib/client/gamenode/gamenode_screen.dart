@@ -813,17 +813,15 @@ class _GameNodeScreenState extends State<GameNodeScreen>
       },
       child: Scaffold(
       backgroundColor: AppTheme.background,
-      body: Stack(
+      body: SafeArea(
+        child: Stack(
         children: [
           Column(
             children: [
               // Minimal identity bar — shown in lobby and game phases instead
               // of a full AppBar. Discovery screen manages its own header.
               if (_phase != _NodePhase.discovery)
-                SafeArea(
-                  bottom: false,
-                  child: _buildIdentityBar(),
-                ),
+                _buildIdentityBar(),
               Expanded(
                 child: switch (_phase) {
                   _NodePhase.discovery => _buildDiscovery(),
@@ -860,7 +858,8 @@ class _GameNodeScreenState extends State<GameNodeScreen>
               _connState != WsConnectionState.connected)
             _buildConnectionOverlay(),
         ],
-      ),
+      ), // Stack
+      ), // SafeArea
     ), // Scaffold
     ); // PopScope
   }

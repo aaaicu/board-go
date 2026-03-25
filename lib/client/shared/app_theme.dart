@@ -346,19 +346,19 @@ abstract final class AppTheme {
   // Public factory
   // ---------------------------------------------------------------------------
 
-  static ThemeData light() {
+  static ThemeData dark() {
     final colorScheme = ColorScheme(
-      brightness: Brightness.light,
+      brightness: Brightness.dark,
       primary: primary,
       onPrimary: onPrimary,
       primaryContainer: primaryContainer,
       onPrimaryContainer: primary,
       secondary: secondary,
-      onSecondary: onSecondary,
+      onSecondary: background,
       secondaryContainer: secondaryContainer,
       onSecondaryContainer: onSecondaryContainer,
       tertiary: tertiary,
-      onTertiary: onTertiary,
+      onTertiary: background,
       tertiaryContainer: tertiaryContainer,
       onTertiaryContainer: onTertiaryContainer,
       error: error,
@@ -379,7 +379,7 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: Brightness.dark,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: background,
       textTheme: _buildTextTheme(),
@@ -396,7 +396,4 @@ abstract final class AppTheme {
       highlightColor: primary.withValues(alpha: 0.04),
     );
   }
-
-  /// Backwards-compatible alias — prefer [light()].
-  static ThemeData dark() => light();
 }

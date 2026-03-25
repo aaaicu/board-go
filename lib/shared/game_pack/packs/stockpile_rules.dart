@@ -19,13 +19,41 @@ import '../views/player_view.dart';
 const String _kPackId = 'stockpile';
 const int _kStartingCash = 20000;
 const int _kSplitResetPrice = 6;
-const int _kSplitThreshold = 12;
+const int _kSplitThreshold = 10; // price > 10 triggers split (11 is the split space)
 const int _kBankruptcyResetPrice = 5;
 const int _kMaxRecentLog = 10;
 const int _kDividendSentinel = -99;
 const int _kDividendPayout = 2000;
 const int _kMajorityBonus = 10000;
 const int _kTiedMajorityBonus = 5000;
+const int _kMaxBid = 25000;
+
+/// Human-readable Korean display names for each company.
+const Map<String, String> _kCompanyNames = {
+  'aauto': 'AAUTO',
+  'epic': 'EPIC',
+  'fed': 'FED',
+  'lehm': 'LEHM',
+  'sip': 'SIP',
+  'tot': 'TOT',
+};
+
+/// Returns the player's display nickname, falling back to playerId.
+String _nick(GameSessionState state, String playerId) =>
+    state.players[playerId]?.nickname ?? playerId;
+
+/// Returns a user-friendly card name for log messages.
+String _logCardName(String cardId) {
+  if (cardId.startsWith('stock_')) {
+    final c = cardId.substring(6);
+    return '${_kCompanyNames[c] ?? c} 주식';
+  }
+  if (cardId == 'fee_1000') return '수수료 \$1K';
+  if (cardId == 'fee_2000') return '수수료 \$2K';
+  if (cardId == 'action_boom') return 'Boom!';
+  if (cardId == 'action_bust') return 'Bust!';
+  return cardId;
+}
 
 /// Company IDs in canonical order (used as indices into forecast arrays).
 const List<String> _kCompanies = [
@@ -145,6 +173,10 @@ class StockpileRules extends GamePackRules {
       'supplyHands': <String, dynamic>{},
       'supplyPlaced': <String, dynamic>{},
       'demandBids': <String, dynamic>{},
+      'demandRound': 1,
+      'outbidPlayers': <String>[],
+      'rebidActedPlayers': <String>[],
+      'demandPassedPlayers': <String>[],
       'actionCards': <String, dynamic>{},
       'phaseActedPlayers': <String>[],
     };
@@ -217,6 +249,7 @@ class StockpileRules extends GamePackRules {
       'PLACE_FACE_UP' => _applyPlaceFaceUp(state, playerId, action),
       'PLACE_FACE_DOWN' => _applyPlaceFaceDown(state, playerId, action),
       'BID' => _applyBid(state, playerId, action),
+      'DEMAND_PASS' => _applyDemandPass(state, playerId),
       'END_PHASE' => _applyEndPhase(state, playerId),
       'USE_BOOM' => _applyUseBoom(state, playerId, action),
       'USE_BUST' => _applyUseBust(state, playerId, action),
@@ -419,6 +452,9 @@ class StockpileRules extends GamePackRules {
           'faceUp': myPlaced['faceUp'] as bool? ?? false,
           'faceDown': myPlaced['faceDown'] as bool? ?? false,
         },
+        'demandRound': gData['demandRound'] as int? ?? 1,
+        'outbidPlayers':
+            List<String>.from(gData['outbidPlayers'] as List? ?? []),
       },
     );
   }
@@ -475,27 +511,55 @@ class StockpileRules extends GamePackRules {
   ) {
     final cash = _getCash(gameState);
     final myCash = cash[playerId] ?? 0;
+    final demandRound = gameState.data['demandRound'] as int? ?? 1;
+    final isRebidRound = demandRound > 1;
+    final stockpiles = _getStockpiles(gameState);
     final actions = <AllowedAction>[];
 
     for (var i = 0; i < stockpileCount; i++) {
-      // Can bid any amount from 0 to available cash
-      // We expose a $0 (pass) bid and let the UI handle custom amounts.
+      final sp = (stockpiles[i] as Map).cast<String, dynamic>();
+      final currentBidderId = sp['currentBidderId'] as String?;
+
+      // In a rebid round, skip piles where this player is already the leader.
+      if (isRebidRound && currentBidderId == playerId) continue;
+
+      final currentBid = sp['currentBid'] as int? ?? 0;
+
+      // Minimum bid is current pile bid + 1 (must be strictly higher).
+      // In the first round, pile currentBid starts at 0, so amount 0 is valid
+      // only if no one has bid yet.
+      final minValidBid = currentBid > 0 ? currentBid + 1 : 0;
+
+      // If the minimum valid bid already exceeds the cap, this pile is locked —
+      // no further bids are possible. Skip it entirely so no button appears.
+      if (minValidBid > _kMaxBid) continue;
+
+      // Also skip if the player can't afford even the minimum bid.
+      if (minValidBid > myCash) continue;
+
       actions.add(AllowedAction(
         actionType: 'BID',
         label: 'Bid on pile ${i + 1}',
-        params: {'stockpileIndex': i, 'amount': 0},
+        params: {'stockpileIndex': i, 'amount': minValidBid},
       ));
-    }
 
-    // Also expose max-bid option for each stockpile (quality-of-life)
-    if (myCash > 0) {
-      for (var i = 0; i < stockpileCount; i++) {
+      // All-in option (capped to _kMaxBid)
+      final allInAmount = myCash.clamp(0, _kMaxBid);
+      if (allInAmount > currentBid) {
         actions.add(AllowedAction(
           actionType: 'BID',
-          label: 'Bid all \$$myCash on pile ${i + 1}',
-          params: {'stockpileIndex': i, 'amount': myCash},
+          label: 'Bid all \$$allInAmount on pile ${i + 1}',
+          params: {'stockpileIndex': i, 'amount': allInAmount},
         ));
       }
+    }
+
+    // DEMAND_PASS is only offered during rebid rounds.
+    if (isRebidRound) {
+      actions.add(const AllowedAction(
+        actionType: 'DEMAND_PASS',
+        label: '이번 재입찰 통과',
+      ));
     }
 
     return actions;
@@ -633,8 +697,14 @@ class StockpileRules extends GamePackRules {
     // Check if player has placed both — if so, advance
     final hasPlacedFaceDown = myPlaced['faceDown'] as bool? ?? false;
     if (hasPlacedFaceDown) {
+      final logEntry = GameLogEntry(
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        eventType: 'PLACE_FACE_UP',
+        description:
+            '${_nick(state, playerId)} → 더미 ${stockpileIndex + 1}에 ${_logCardName(card)} 앞면 배치',
+      );
       return _advancePlayer(
-        state.copyWith(gameState: newGameState),
+        state.copyWith(gameState: newGameState).addLog(logEntry),
         playerId,
       );
     }
@@ -642,7 +712,8 @@ class StockpileRules extends GamePackRules {
     final logEntry = GameLogEntry(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'PLACE_FACE_UP',
-      description: '$playerId placed $card face-up on pile $stockpileIndex',
+      description:
+          '${_nick(state, playerId)} → 더미 ${stockpileIndex + 1}에 ${_logCardName(card)} 앞면 배치',
     );
 
     return state.copyWith(gameState: newGameState).addLog(logEntry);
@@ -691,8 +762,14 @@ class StockpileRules extends GamePackRules {
     // Check if player has placed both — if so, advance
     final hasPlacedFaceUp = myPlaced['faceUp'] as bool? ?? false;
     if (hasPlacedFaceUp) {
+      final logEntry = GameLogEntry(
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        eventType: 'PLACE_FACE_DOWN',
+        description:
+            '${_nick(state, playerId)} → 더미 ${stockpileIndex + 1}에 카드 뒷면 배치',
+      );
       return _advancePlayer(
-        state.copyWith(gameState: newGameState),
+        state.copyWith(gameState: newGameState).addLog(logEntry),
         playerId,
       );
     }
@@ -700,7 +777,8 @@ class StockpileRules extends GamePackRules {
     final logEntry = GameLogEntry(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'PLACE_FACE_DOWN',
-      description: '$playerId placed card face-down on pile $stockpileIndex',
+      description:
+          '${_nick(state, playerId)} → 더미 ${stockpileIndex + 1}에 카드 뒷면 배치',
     );
 
     return state.copyWith(gameState: newGameState).addLog(logEntry);
@@ -718,20 +796,38 @@ class StockpileRules extends GamePackRules {
     final amount = action.data['amount'] as int?;
     if (stockpileIndex == null || amount == null) return state;
 
+    // Enforce $25,000 upper cap.
+    if (amount > _kMaxBid) return state;
+
     final data = Map<String, dynamic>.from(gameState.data);
     final stockpiles = _copyStockpiles(data['stockpiles'] as List);
     if (stockpileIndex >= stockpiles.length) return state;
 
-    // Update stockpile bid if this is higher (or if no current bid)
     final sp = Map<String, dynamic>.from(stockpiles[stockpileIndex]);
     final currentBid = sp['currentBid'] as int? ?? 0;
-    if (amount > currentBid) {
-      sp['currentBid'] = amount;
-      sp['currentBidderId'] = playerId;
-      stockpiles[stockpileIndex] = sp;
-    }
+    final previousBidderId = sp['currentBidderId'] as String?;
 
-    // Record player's bid
+    // Reject bids that are not strictly higher than the current leading bid.
+    // A $0 bid on an unclaimed pile (no current bidder) is valid.
+    if (previousBidderId != null && amount <= currentBid) return state;
+
+    // Track displaced bidder in outbidPlayers (only if there was a prior bidder
+    // and that bidder is different from the current player).
+    final outbidPlayers = List<String>.from(
+        (data['outbidPlayers'] as List? ?? []));
+    if (previousBidderId != null &&
+        previousBidderId != playerId &&
+        !outbidPlayers.contains(previousBidderId)) {
+      outbidPlayers.add(previousBidderId);
+    }
+    // The player who is now bidding higher is no longer outbid.
+    outbidPlayers.remove(playerId);
+
+    sp['currentBid'] = amount;
+    sp['currentBidderId'] = playerId;
+    stockpiles[stockpileIndex] = sp;
+
+    // Record player's bid.
     final demandBids = Map<String, dynamic>.from(
         (data['demandBids'] as Map?)?.cast<String, dynamic>() ?? {});
     demandBids[playerId] = {
@@ -741,16 +837,50 @@ class StockpileRules extends GamePackRules {
 
     data['stockpiles'] = stockpiles;
     data['demandBids'] = demandBids;
+    data['outbidPlayers'] = outbidPlayers;
 
     final newGameState = gameState.copyWith(data: data);
 
     final logEntry = GameLogEntry(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'BID',
-      description: '$playerId bid \$$amount on pile $stockpileIndex',
+      description:
+          '${_nick(state, playerId)} → 더미 ${stockpileIndex + 1}에 \$${amount ~/ 1000 > 0 ? '${amount ~/ 1000}K' : amount} 입찰',
     );
 
-    return _advancePlayer(
+    return _advanceDemandPlayer(
+      state.copyWith(gameState: newGameState).addLog(logEntry),
+      playerId,
+    );
+  }
+
+  /// Handles a DEMAND_PASS action during a rebid round.
+  ///
+  /// Adds [playerId] to [demandPassedPlayers] and advances to the next
+  /// rebid-eligible player.  If all outbid players have now acted, resolves
+  /// bids and transitions to the action phase.
+  GameSessionState _applyDemandPass(
+    GameSessionState state,
+    String playerId,
+  ) {
+    final gameState = state.gameState;
+    if (gameState == null) return state;
+
+    final data = Map<String, dynamic>.from(gameState.data);
+    final passed = List<String>.from(
+        (data['demandPassedPlayers'] as List? ?? []));
+    if (!passed.contains(playerId)) passed.add(playerId);
+    data['demandPassedPlayers'] = passed;
+
+    final newGameState = gameState.copyWith(data: data);
+
+    final logEntry = GameLogEntry(
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      eventType: 'DEMAND_PASS',
+      description: '${_nick(state, playerId)} 재입찰 통과',
+    );
+
+    return _advanceDemandPlayer(
       state.copyWith(gameState: newGameState).addLog(logEntry),
       playerId,
     );
@@ -763,7 +893,7 @@ class StockpileRules extends GamePackRules {
     final logEntry = GameLogEntry(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'END_PHASE',
-      description: '$playerId ended phase',
+      description: '${_nick(state, playerId)} 단계 완료',
     );
 
     return _advancePlayer(state.addLog(logEntry), playerId);
@@ -825,7 +955,8 @@ class StockpileRules extends GamePackRules {
     final logEntry = GameLogEntry(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'USE_BOOM',
-      description: '$playerId boomed $company (+2)',
+      description:
+          '${_nick(state, playerId)} → ${_kCompanyNames[company] ?? company} Boom! (+2)',
     );
 
     return state.copyWith(gameState: newGameState).addLog(logEntry);
@@ -881,7 +1012,8 @@ class StockpileRules extends GamePackRules {
     final logEntry = GameLogEntry(
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'USE_BUST',
-      description: '$playerId busted $company (-2)',
+      description:
+          '${_nick(state, playerId)} → ${_kCompanyNames[company] ?? company} Bust! (-2)',
     );
 
     return state.copyWith(gameState: newGameState).addLog(logEntry);
@@ -942,7 +1074,7 @@ class StockpileRules extends GamePackRules {
       timestamp: DateTime.now().millisecondsSinceEpoch,
       eventType: 'SELL_STOCK',
       description:
-          '$playerId sold 1 $type share of $company for \$$proceeds',
+          '${_nick(state, playerId)} → ${_kCompanyNames[company] ?? company} ${type == 'split' ? '분할' : '일반'} 주식 매도 \$${proceeds ~/ 1000 > 0 ? '${proceeds ~/ 1000}K' : proceeds}',
     );
 
     return state.copyWith(gameState: newGameState).addLog(logEntry);
@@ -951,6 +1083,144 @@ class StockpileRules extends GamePackRules {
   // ---------------------------------------------------------------------------
   // Phase progression
   // ---------------------------------------------------------------------------
+
+  /// Demand-specific player advancement that handles both the initial bid round
+  /// and rebid rounds.
+  ///
+  /// After each bid or pass:
+  /// - In round 1: advance through all players as usual; when the last player
+  ///   acts, check whether any outbid players exist.  If yes, start rebid round.
+  ///   If no, resolve bids and transition to action.
+  /// - In rebid rounds (demandRound > 1): cycle only through outbidPlayers who
+  ///   have not yet acted in this rebid round.  When all have acted, check for
+  ///   new outbids to determine whether another rebid round is needed.
+  GameSessionState _advanceDemandPlayer(
+    GameSessionState state,
+    String playerId,
+  ) {
+    final gameState = state.gameState!;
+    final data = Map<String, dynamic>.from(gameState.data);
+    final playerOrder = state.playerOrder;
+    final demandRound = data['demandRound'] as int? ?? 1;
+    final outbidPlayers = List<String>.from(
+        (data['outbidPlayers'] as List? ?? []));
+
+    if (demandRound == 1) {
+      // ── First bid round: all players bid once in playerOrder ──────────────
+      final acted = List<String>.from(
+          data['phaseActedPlayers'] as List? ?? []);
+      if (!acted.contains(playerId)) acted.add(playerId);
+      data['phaseActedPlayers'] = acted;
+
+      final nextPlayer = playerOrder.firstWhere(
+        (pid) => !acted.contains(pid),
+        orElse: () => '',
+      );
+
+      if (nextPlayer.isNotEmpty) {
+        return _setActiveDemandPlayer(state, data, nextPlayer, gameState);
+      }
+
+      // All players have bid once.  Check for outbids.
+      if (outbidPlayers.isEmpty) {
+        // No one was outbid — resolve bids directly.
+        final newGameState = gameState.copyWith(data: data);
+        return _resolveBidsAndTransitionToAction(
+            state.copyWith(gameState: newGameState), data, playerOrder);
+      }
+
+      // Start rebid round 2.
+      return _startRebidRound(state, data, playerOrder, outbidPlayers);
+    } else {
+      // ── Rebid round: only outbidPlayers act ───────────────────────────────
+      final rebidActed = List<String>.from(
+          data['rebidActedPlayers'] as List? ?? []);
+      if (!rebidActed.contains(playerId)) rebidActed.add(playerId);
+      data['rebidActedPlayers'] = rebidActed;
+
+      // Find next outbid player in playerOrder who has not yet acted this round.
+      final nextRebidPlayer = playerOrder.firstWhere(
+        (pid) => outbidPlayers.contains(pid) && !rebidActed.contains(pid),
+        orElse: () => '',
+      );
+
+      if (nextRebidPlayer.isNotEmpty) {
+        return _setActiveDemandPlayer(state, data, nextRebidPlayer, gameState);
+      }
+
+      // All outbid players have acted in this rebid round.
+      // Determine if any new outbids occurred during this round by examining
+      // which players are now in outbidPlayers but were NOT in the current
+      // rebid acted set (i.e., they weren't yet called to act).
+      // A new outbid occurred when a player is in outbidPlayers but was not
+      // the one who just acted and is not in rebidActed.
+      final newOutbidPlayers = outbidPlayers
+          .where((pid) => !rebidActed.contains(pid))
+          .toList();
+
+      if (newOutbidPlayers.isEmpty) {
+        // No further outbids — resolve.
+        final newGameState = gameState.copyWith(data: data);
+        return _resolveBidsAndTransitionToAction(
+            state.copyWith(gameState: newGameState), data, playerOrder);
+      }
+
+      // More players were outbid during this rebid round — start another.
+      return _startRebidRound(state, data, playerOrder, outbidPlayers);
+    }
+  }
+
+  /// Begins a new rebid round, incrementing [demandRound] and resetting the
+  /// per-round acted tracking.  Activates the first outbid player in
+  /// [playerOrder].
+  GameSessionState _startRebidRound(
+    GameSessionState state,
+    Map<String, dynamic> data,
+    List<String> playerOrder,
+    List<String> outbidPlayers,
+  ) {
+    final currentRound = data['demandRound'] as int? ?? 1;
+    data['demandRound'] = currentRound + 1;
+    data['rebidActedPlayers'] = <String>[];
+    // Clear passed list for the new round so players may act again.
+    data['demandPassedPlayers'] = <String>[];
+
+    // First outbid player in canonical order.
+    final firstOutbid = playerOrder.firstWhere(
+      (pid) => outbidPlayers.contains(pid),
+      orElse: () => outbidPlayers.first,
+    );
+
+    return _setActiveDemandPlayer(
+        state, data, firstOutbid, state.gameState!.copyWith(data: data));
+  }
+
+  /// Low-level helper: writes [data] and [nextPlayer] back to state.
+  GameSessionState _setActiveDemandPlayer(
+    GameSessionState state,
+    Map<String, dynamic> data,
+    String nextPlayer,
+    GameState gameState,
+  ) {
+    final nextIndex = state.playerOrder.indexOf(nextPlayer);
+    final newTurnState = TurnState(
+      round: state.turnState!.round,
+      turnIndex: nextIndex,
+      activePlayerId: nextPlayer,
+      step: TurnStep.main,
+      actionCountThisTurn: 0,
+    );
+    final newGameState = gameState.copyWith(
+      data: data,
+      activePlayerId: nextPlayer,
+      turn: gameState.turn + 1,
+    );
+    return state.copyWith(
+      gameState: newGameState,
+      turnState: newTurnState,
+      version: state.version + 1,
+    );
+  }
 
   /// Marks [playerId] as having acted, then either advances to the next player
   /// or triggers [_advancePhase] when all players have acted.
@@ -1197,7 +1467,7 @@ class StockpileRules extends GamePackRules {
         logEntries.add(GameLogEntry(
           timestamp: DateTime.now().millisecondsSinceEpoch,
           eventType: 'DIVIDEND',
-          description: '$company paid dividends',
+          description: '${_kCompanyNames[company] ?? company} 배당 지급 💰',
         ));
       } else {
         final result = _applyPriceChange(
@@ -1220,7 +1490,7 @@ class StockpileRules extends GamePackRules {
           timestamp: DateTime.now().millisecondsSinceEpoch,
           eventType: 'MOVEMENT',
           description:
-              '$company: ${change >= 0 ? '+$change' : '$change'} → \$${prices[company]}',
+              '${_kCompanyNames[company] ?? company} ${change >= 0 ? '+$change' : '$change'} → \$${prices[company]}',
         ));
       }
     }
@@ -1306,8 +1576,9 @@ class StockpileRules extends GamePackRules {
     var bankruptcyOccurred = false;
 
     if (price > _kSplitThreshold) {
-      // Split: reset to 6, apply remaining movement
-      final remaining = price - _kSplitThreshold;
+      // Split: price crossed the split space (11+). Reset to 6, apply remaining.
+      // e.g. price 9 + 4 = 13 → remaining = 13 - 11 = 2 → 6 + 2 = 8
+      final remaining = price - (_kSplitThreshold + 1);
       price = _kSplitResetPrice + remaining;
       splitOccurred = true;
     } else if (price < 1) {
@@ -1439,6 +1710,10 @@ class StockpileRules extends GamePackRules {
       for (final pid in playerOrder) pid: {'faceUp': false, 'faceDown': false},
     };
     result['demandBids'] = <String, dynamic>{};
+    result['demandRound'] = 1;
+    result['outbidPlayers'] = <String>[];
+    result['rebidActedPlayers'] = <String>[];
+    result['demandPassedPlayers'] = <String>[];
     result['actionCards'] = <String, dynamic>{
       for (final pid in playerOrder)
         pid: List<String>.from(
