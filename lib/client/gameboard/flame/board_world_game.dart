@@ -96,7 +96,11 @@ class BoardWorldGame extends FlameGame with ScaleDetector {
   // ---------------------------------------------------------------------------
 
   void _applyZoom(ScaleUpdateInfo info) {
-    final newZoom = (_startZoom * info.scale.global.length)
+    // Only zoom on a genuine pinch gesture (2+ fingers).
+    // Single-finger drag has scale == Vector2(1,1) whose .length ≈ 1.414,
+    // which would erroneously zoom in on every pan.
+    if (info.pointerCount < 2) return;
+    final newZoom = (_startZoom * info.scale.global.x)
         .clamp(_kMinZoom, _kMaxZoom);
     camera.viewfinder.zoom = newZoom;
   }

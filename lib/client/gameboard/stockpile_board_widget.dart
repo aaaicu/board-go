@@ -21,15 +21,15 @@ const _companyShort = {
   'tot': 'TOT',
 };
 
-// Company identity colors — muted for dark backgrounds while remaining
-// visually distinct. These are game identifiers; do not merge or remove.
+// Company identity colors — original board-game palette.
+// Must match stockpile_player_widget.dart and kCompanyColors exactly.
 const _companyColors = {
-  'aauto': Color(0xFF6B9FD4), // steel blue
-  'epic': Color(0xFF6BBF6B), // muted green
-  'fed': Color(0xFFB5845A), // warm brown
-  'lehm': Color(0xFFAB82C5), // muted purple
-  'sip': Color(0xFFE8A857), // amber orange
-  'tot': Color(0xFFE87D9A), // muted pink
+  'aauto': Color(0xFFD44B3A), // red   — American Automotive
+  'epic': Color(0xFFE8A83C), // amber — Epic Electric
+  'fed': Color(0xFF4A7BC8), // blue  — Cosmic Computers
+  'lehm': Color(0xFF9B6BBF), // purple — Leading Laboratories
+  'sip': Color(0xFF7A7A7A), // grey  — Stanford Steel
+  'tot': Color(0xFF4A9B6B), // green — Bottomline Bank
 };
 
 const _companyImages = {
@@ -128,6 +128,8 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
     _boardGame.updateRenderer(
       StockpileBoardRenderer(playerNames: widget.playerNames),
     );
+    // Forward the initial board state so piles/prices are visible on first render.
+    _boardGame.updateBoardView(widget.boardView);
 
     // Toast animation
     _toastAnim = AnimationController(
@@ -190,16 +192,8 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   String get _phase => _data['phase'] as String? ?? '';
   int get _round => _data['round'] as int? ?? 1;
   int get _totalRounds => _data['totalRounds'] as int? ?? 1;
-  Map<String, int> get _stockPrices =>
-      (_data['stockPrices'] as Map?)?.cast<String, int>() ?? {};
-  List<Map<String, dynamic>> get _stockpiles =>
-      ((_data['stockpiles'] as List?) ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
   Map<String, dynamic> get _publicForecast =>
       (_data['publicForecast'] as Map?)?.cast<String, dynamic>() ?? {};
-  Map<String, int> get _cash =>
-      (_data['cash'] as Map?)?.cast<String, int>() ?? {};
 
   @override
   Widget build(BuildContext context) {
@@ -223,14 +217,6 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
                       left: 8,
                       right: 8,
                       child: _buildPublicForecast(context),
-                    ),
-                  // Player cash strip — bottom overlay
-                  if (_cash.isNotEmpty)
-                    Positioned(
-                      bottom: 8,
-                      left: 8,
-                      right: 8,
-                      child: _buildCashRow(context),
                     ),
                 ],
               ),
@@ -259,7 +245,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   Widget _buildPhaseHeader(BuildContext context) {
     final phaseLabel = _phaseLabels[_phase] ?? _phase;
     return Container(
-      color: Theme.of(context).colorScheme.primaryContainer,
+      color: const Color(0xFFE8DFC8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
         children: [
@@ -271,7 +257,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
           // Round info
           Text(
             '라운드 $_round / $_totalRounds',
-            style: Theme.of(context).textTheme.titleSmall,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(width: 12),
           // Phase chip
@@ -279,7 +265,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
             label: Text(
               phaseLabel,
               style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 12),
+                  fontWeight: FontWeight.bold, fontSize: 14),
             ),
             backgroundColor:
                 Theme.of(context).colorScheme.secondaryContainer,
@@ -332,7 +318,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
-                      minimumSize: Size.zero,
+                      minimumSize: const Size(72, 44),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     icon: const Icon(Icons.stop_circle_outlined,
@@ -418,39 +404,6 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   }
 
   // ---------------------------------------------------------------------------
-  // Player cash row
-  // ---------------------------------------------------------------------------
-
-  Widget _buildCashRow(BuildContext context) {
-    if (_cash.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('보유 현금',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: AppTheme.onSurface)),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: _cash.entries.map((e) {
-            final name = widget.playerNames[e.key] ?? e.key;
-            return Chip(
-              avatar: const Icon(Icons.attach_money, size: 16),
-              label: Text(
-                '$name: \$${_formatCash(e.value)}',
-                style: const TextStyle(fontSize: 12),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Toast banner
   // ---------------------------------------------------------------------------
 
@@ -479,7 +432,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
               child: Text(
                 message,
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: 16,
                   color: AppTheme.onPrimary,
                   fontWeight: FontWeight.w500,
                 ),
@@ -494,11 +447,5 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   // ---------------------------------------------------------------------------
   // Utilities
   // ---------------------------------------------------------------------------
-
-  /// Formats large integers as K / M shorthand (e.g. 18000 → "18K").
-  String _formatCash(int amount) {
-    if (amount >= 1000) return '${(amount / 1000).toStringAsFixed(0)}K';
-    return '$amount';
-  }
 
 }

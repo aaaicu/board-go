@@ -65,13 +65,13 @@ const List<String> _kCompanies = [
   'tot',
 ];
 
-/// Starting prices for each company (parallel to [_kCompanies]).
+/// Starting prices for each company — all start at $5 per basic rules.
 const Map<String, int> _kStartingPrices = {
-  'aauto': 4,
-  'epic': 8,
+  'aauto': 5,
+  'epic': 5,
   'fed': 5,
-  'lehm': 7,
-  'sip': 6,
+  'lehm': 5,
+  'sip': 5,
   'tot': 5,
 };
 
@@ -374,7 +374,6 @@ class StockpileRules extends GamePackRules {
         'stockPrices': Map<String, int>.from(prices),
         'stockpiles': stockpilesPublic,
         'publicForecast': publicForecast,
-        'cash': Map<String, int>.from(cash),
       },
     );
   }

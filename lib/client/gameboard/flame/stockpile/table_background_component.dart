@@ -3,32 +3,35 @@ import 'dart:math' as math;
 import 'package:flame/components.dart';
 import 'package:flutter/painting.dart';
 
-/// Deep dark wood/table background rendered procedurally via Canvas.
+/// Cream/beige board background rendered procedurally via Canvas.
 ///
-/// Fills a fixed world-space rectangle large enough that the camera will
-/// never see the edge at any supported zoom level.  Grain dots are seeded
-/// once at construction time so they do not flicker between frames.
+/// Mimics the warm parchment feel of the original Stockpile board game.
+/// Fills a fixed world-space rectangle large enough that the camera never
+/// sees the edge at any supported zoom level.  Subtle texture dots are
+/// seeded once at construction time so they do not flicker between frames.
 class TableBackgroundComponent extends PositionComponent {
   static const double _kHalfSize = 2000.0;
-  static const Color _kBaseColor = Color(0xFF1A1008);
 
-  /// Pre-computed grain dot positions (relative to component origin).
-  final List<Offset> _grainDots;
+  /// Primary parchment / cream colour.
+  static const Color _kBaseColor = Color(0xFFF5EFE0);
 
-  TableBackgroundComponent() : _grainDots = _buildGrain() {
+  /// Pre-computed texture dot positions (relative to component origin).
+  final List<Offset> _textureDots;
+
+  TableBackgroundComponent() : _textureDots = _buildTexture() {
     size = Vector2.all(_kHalfSize * 2);
     position = Vector2.all(-_kHalfSize);
     priority = -100; // always behind everything else
   }
 
   // ---------------------------------------------------------------------------
-  // Pre-compute 1200 grain dots once — no rand calls in render().
+  // Pre-compute 800 texture dots once — no Random calls in render().
   // ---------------------------------------------------------------------------
-  static List<Offset> _buildGrain() {
-    final rand = math.Random(42);
+  static List<Offset> _buildTexture() {
+    final rand = math.Random(77);
     final side = _kHalfSize * 2;
     return List.generate(
-      1200,
+      800,
       (_) => Offset(rand.nextDouble() * side, rand.nextDouble() * side),
     );
   }
@@ -41,19 +44,19 @@ class TableBackgroundComponent extends PositionComponent {
   void render(Canvas canvas) {
     final rect = Rect.fromLTWH(0, 0, size.x, size.y);
 
-    // Base fill.
+    // Base cream fill.
     canvas.drawRect(rect, Paint()..color = _kBaseColor);
 
-    // Subtle wood-grain gradient — horizontal bands.
+    // Subtle parchment gradient — very soft vertical banding.
     final grainGradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
       colors: const [
-        Color(0xFF1A1008),
-        Color(0xFF221408),
-        Color(0xFF1A1008),
-        Color(0xFF1E1208),
-        Color(0xFF1A1008),
+        Color(0xFFF5EFE0),
+        Color(0xFFEDE4CC),
+        Color(0xFFF5EFE0),
+        Color(0xFFEAE1CB),
+        Color(0xFFF5EFE0),
       ],
       stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
     );
@@ -62,26 +65,26 @@ class TableBackgroundComponent extends PositionComponent {
       Paint()..shader = grainGradient.createShader(rect),
     );
 
-    // Grain dots — very faint, two sizes.
-    final smallDotPaint = Paint()..color = const Color(0x0DFFFFFF);
-    final largeDotPaint = Paint()..color = const Color(0x08FFFFFF);
+    // Subtle paper-fibre texture dots in two shades.
+    final lightDotPaint = Paint()..color = const Color(0x18A08060);
+    final darkDotPaint = Paint()..color = const Color(0x10806040);
 
-    for (var i = 0; i < _grainDots.length; i++) {
-      final dot = _grainDots[i];
-      if (i % 5 == 0) {
-        canvas.drawCircle(dot, 1.2, largeDotPaint);
+    for (var i = 0; i < _textureDots.length; i++) {
+      final dot = _textureDots[i];
+      if (i % 4 == 0) {
+        canvas.drawCircle(dot, 1.0, darkDotPaint);
       } else {
-        canvas.drawCircle(dot, 0.6, smallDotPaint);
+        canvas.drawCircle(dot, 0.5, lightDotPaint);
       }
     }
 
-    // Vignette — slightly darker towards corners.
+    // Soft vignette — corners slightly darker for depth.
     final vignetteGradient = RadialGradient(
       center: Alignment.center,
-      radius: 0.85,
+      radius: 0.80,
       colors: const [
         Color(0x00000000),
-        Color(0x55000000),
+        Color(0x28000000),
       ],
     );
     canvas.drawRect(

@@ -4,30 +4,64 @@ import 'package:flutter/painting.dart';
 import 'stock_price_tile_component.dart'
     show kCompanyColors, kCompanyShort;
 
-/// Visual constants for the pile layout.
-const double _kPileWidth = 140.0;
-const double _kPileHeight = 180.0;
+// ---------------------------------------------------------------------------
+// Visual constants
+// ---------------------------------------------------------------------------
+
+const double _kPileWidth = 150.0;
+const double _kPileHeight = 200.0;
 const double _kCornerRadius = 10.0;
-const double _kCardChipWidth = 36.0;
-const double _kCardChipHeight = 22.0;
-const double _kChipStackOffset = 4.0;
-const double _kFaceDownWidth = 28.0;
-const double _kFaceDownHeight = 20.0;
-const double _kBadgeHeight = 28.0;
+
+// Header zone (pile number + player count).
+const double _kHeaderHeight = 36.0;
+
+// Card preview zone.
+const double _kCardAreaHeight = 86.0;
+
+// Bid zone at the bottom.
+const double _kBidAreaHeight = 52.0;
+
+// Padding.
+const double _kPad = 8.0;
+const double _kInnerPad = 5.0;
+
+// Card chip dimensions inside the preview area.
+const double _kChipW = 40.0;
+const double _kChipH = 26.0;
+const double _kChipGap = 4.0;
+
+// Face-down card chip dimensions.
+const double _kFdW = 26.0;
+const double _kFdH = 18.0;
+
+// Background colours — cream/beige calculator style.
+const Color _kBodyBg = Color(0xFFF0E8D0);
+const Color _kHeaderBg = Color(0xFFE0D5B5);
+const Color _kCardAreaBg = Color(0xFFE8DEBB);
+const Color _kBidAreaBg = Color(0xFFD8CCAA);
+const Color _kBorderColor = Color(0xFFBFAF88);
+const Color _kTextDark = Color(0xFF3A3020);
+const Color _kTextMuted = Color(0xFF8A7A55);
+const Color _kFaceDownColor = Color(0xFF4A4030);
+const Color _kFaceDownBorder = Color(0xFF7A6A50);
+const Color _kBidHighlight = Color(0xFFE07820); // orange bid highlight
+const Color _kNoBidColor = Color(0xFF9A8A65);
 
 // ---------------------------------------------------------------------------
 // StockpilePileComponent
 // ---------------------------------------------------------------------------
 
-/// Renders one physical Stockpile card pile (140 × 180 world units).
+/// Renders one physical Stockpile card pile (150 × 200 world units).
+///
+/// Visual style: cream/beige calculator aesthetic matching the original
+/// board-game look.
 ///
 /// Layout (top → bottom):
-///   - Pile number label
-///   - Face-up cards as small colour chips (stacked with slight offset)
-///   - Face-down cards as dark chip stack
-///   - Bid badge (current bid amount + bidder name)
+///   - Header: pile number + player-icon + count (36 px)
+///   - Card preview: face-up chips + face-down stack (86 px)
+///   - Bid area: current bid amount highlighted in orange (52 px)
 ///
-/// Call [update] whenever the server broadcasts a new board state.
+/// Call [refresh] whenever the server broadcasts a new board state.
 class StockpilePileComponent extends PositionComponent {
   final int pileIndex;
 
@@ -36,29 +70,26 @@ class StockpilePileComponent extends PositionComponent {
   int? _currentBid;
   String? _currentBidderId;
   Map<String, String> _playerNames = const {};
+  int _playerCount = 0;
 
   // Pre-allocated paints.
-  final Paint _containerPaint = Paint()
-    ..color = const Color(0xFF2A1E12);
-  final Paint _containerBorderPaint = Paint()
+  final Paint _bodyPaint = Paint()..color = _kBodyBg;
+  final Paint _headerPaint = Paint()..color = _kHeaderBg;
+  final Paint _cardAreaPaint = Paint()..color = _kCardAreaBg;
+  final Paint _borderPaint = Paint()
     ..style = PaintingStyle.stroke
-    ..strokeWidth = 2.0
-    ..color = const Color(0xFF5A3E2A);
-  final Paint _shadowPaint = Paint()
-    ..color = const Color(0x55000000);
-  final Paint _faceDownPaint = Paint()
-    ..color = const Color(0xFF1A1008);
+    ..strokeWidth = 1.5
+    ..color = _kBorderColor;
+  final Paint _innerBorderPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 0.8
+    ..color = _kBorderColor;
+  final Paint _shadowPaint = Paint()..color = const Color(0x33000000);
+  final Paint _faceDownPaint = Paint()..color = _kFaceDownColor;
   final Paint _faceDownBorderPaint = Paint()
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.0
-    ..color = const Color(0xFF5A3E2A);
-  final Paint _badgePaint = Paint()
-    ..color = const Color(0xFF3A2810);
-  final Paint _badgeBorderPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1.5
-    ..color = const Color(0xFF8A6840);
-
+    ..color = _kFaceDownBorder;
   StockpilePileComponent({
     required this.pileIndex,
     required Vector2 position,
@@ -74,9 +105,10 @@ class StockpilePileComponent extends PositionComponent {
 
   /// Refreshes displayed data from a raw pile map.
   ///
-  /// [pileData] keys: `faceUpCards` (List), `faceDownCount` (int),
-  ///   `currentBid` (int?), `currentBidderId` (String?).
-  /// [playerNames] maps playerId → display name.
+  /// [pileData] keys:
+  ///   `faceUpCards` (`List&lt;String&gt;`), `faceDownCount` (int),
+  ///   `currentBid` (int?), `currentBidderId` (String?),
+  ///   `playerCount` (int?).
   void refresh(Map<String, dynamic> pileData, Map<String, String> playerNames) {
     _faceUpCards =
         List<String>.from(pileData['faceUpCards'] as List? ?? const []);
@@ -84,6 +116,7 @@ class StockpilePileComponent extends PositionComponent {
     _currentBid = pileData['currentBid'] as int?;
     _currentBidderId = pileData['currentBidderId'] as String?;
     _playerNames = playerNames;
+    _playerCount = (pileData['playerCount'] as int?) ?? playerNames.length;
   }
 
   // ---------------------------------------------------------------------------
@@ -92,109 +125,259 @@ class StockpilePileComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    final bounds = Rect.fromLTWH(0, 0, _kPileWidth, _kPileHeight);
-    final rrect = RRect.fromRectAndRadius(
-      bounds,
-      const Radius.circular(_kCornerRadius),
-    );
-
-    // Shadow.
+    // Drop shadow.
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        bounds.translate(3, 3),
+        Rect.fromLTWH(3, 3, _kPileWidth, _kPileHeight),
         const Radius.circular(_kCornerRadius),
       ),
       _shadowPaint,
     );
 
-    // Container body + border.
-    canvas.drawRRect(rrect, _containerPaint);
-    canvas.drawRRect(rrect, _containerBorderPaint);
+    // Body.
+    final bodyRRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, _kPileWidth, _kPileHeight),
+      const Radius.circular(_kCornerRadius),
+    );
+    canvas.drawRRect(bodyRRect, _bodyPaint);
+    canvas.drawRRect(bodyRRect, _borderPaint);
 
-    // Pile number label.
-    _drawPileLabel(canvas);
+    // Header zone.
+    _drawHeader(canvas);
 
-    // Card area.
-    const cardAreaTop = 28.0;
-    final cardAreaBottom = _kPileHeight - _kBadgeHeight - 8;
-    _drawCards(canvas, cardAreaTop, cardAreaBottom);
+    // Card preview zone.
+    _drawCardArea(canvas);
 
-    // Bid badge.
-    _drawBidBadge(canvas);
+    // Bid area zone.
+    _drawBidArea(canvas);
   }
 
   // ---------------------------------------------------------------------------
-  // Private drawing helpers
+  // Zone drawing
   // ---------------------------------------------------------------------------
 
-  void _drawPileLabel(Canvas canvas) {
-    final painter = TextPainter(
+  void _drawHeader(Canvas canvas) {
+    final headerRRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, _kPileWidth, _kHeaderHeight),
+      const Radius.circular(_kCornerRadius),
+    );
+    canvas.drawRRect(headerRRect, _headerPaint);
+
+    // Separator line below header.
+    canvas.drawLine(
+      Offset(0, _kHeaderHeight),
+      Offset(_kPileWidth, _kHeaderHeight),
+      _innerBorderPaint,
+    );
+
+    // Pile number label (left side).
+    final pilePainter = TextPainter(
       text: TextSpan(
-        text: 'Pile ${pileIndex + 1}',
+        text: '#${pileIndex + 1}',
         style: const TextStyle(
-          color: Color(0xFFAA8866),
-          fontSize: 11,
+          color: _kTextDark,
+          fontSize: 18,
           fontWeight: FontWeight.bold,
-          letterSpacing: 0.8,
+          letterSpacing: 0.5,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    painter.paint(canvas, Offset((_kPileWidth - painter.width) / 2, 6));
-  }
-
-  void _drawCards(Canvas canvas, double top, double bottom) {
-    const horizontalPadding = 10.0;
-
-    // Lay out face-up cards in a single wrapped row with stacking offset.
-    var x = horizontalPadding;
-    var y = top + 4.0;
-
-    for (final cardId in _faceUpCards) {
-      if (x + _kCardChipWidth > _kPileWidth - horizontalPadding) {
-        x = horizontalPadding;
-        y += _kCardChipHeight + 2;
-      }
-      if (y + _kCardChipHeight > bottom) break; // clamp to area
-
-      _drawFaceUpChip(canvas, cardId, x, y);
-      x += _kCardChipWidth + _kChipStackOffset;
-    }
-
-    // Face-down cards — stack of dark chips at bottom-left of card area.
-    if (_faceDownCount > 0) {
-      final stackX = horizontalPadding;
-      final stackY = bottom - _kFaceDownHeight - 2;
-      _drawFaceDownStack(canvas, stackX, stackY);
-    }
-  }
-
-  void _drawFaceUpChip(Canvas canvas, String cardId, double x, double y) {
-    final chipRect = Rect.fromLTWH(x, y, _kCardChipWidth, _kCardChipHeight);
-    final chipRRect = RRect.fromRectAndRadius(
-      chipRect,
-      const Radius.circular(4),
+    pilePainter.paint(
+      canvas,
+      Offset(_kPad, (_kHeaderHeight - pilePainter.height) / 2),
     );
 
-    // Derive fill colour from cardId.
+    // Player icon + count (right side).
+    _drawPlayerBadge(canvas);
+  }
+
+  void _drawPlayerBadge(Canvas canvas) {
+    // Person silhouette icon — simple circle + trapezoid.
+    const iconRight = _kPileWidth - _kPad;
+    final iconCx = iconRight - 22.0;
+    final iconCy = _kHeaderHeight / 2;
+
+    final iconPaint = Paint()..color = _kTextMuted;
+
+    // Head.
+    canvas.drawCircle(Offset(iconCx, iconCy - 5), 4, iconPaint);
+
+    // Body (arc-ish trapezoid).
+    final bodyPath = Path()
+      ..moveTo(iconCx - 5, iconCy + 7)
+      ..quadraticBezierTo(iconCx, iconCy + 1, iconCx + 5, iconCy + 7)
+      ..close();
+    canvas.drawPath(bodyPath, iconPaint);
+
+    // Count number.
+    final countPainter = TextPainter(
+      text: TextSpan(
+        text: '$_playerCount',
+        style: const TextStyle(
+          color: _kTextDark,
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    countPainter.paint(
+      canvas,
+      Offset(
+        iconRight - countPainter.width,
+        (_kHeaderHeight - countPainter.height) / 2,
+      ),
+    );
+  }
+
+  void _drawCardArea(Canvas canvas) {
+    const top = _kHeaderHeight;
+    final cardAreaRRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, top, _kPileWidth, _kCardAreaHeight),
+      const Radius.circular(0),
+    );
+    canvas.drawRRect(cardAreaRRect, _cardAreaPaint);
+
+    // Separator line below card area.
+    canvas.drawLine(
+      Offset(0, top + _kCardAreaHeight),
+      Offset(_kPileWidth, top + _kCardAreaHeight),
+      _innerBorderPaint,
+    );
+
+    // Face-up card chips.
+    var x = _kPad;
+    var y = top + _kInnerPad;
+    final maxX = _kPileWidth - _kPad;
+    final maxY = top + _kCardAreaHeight - _kFdH - _kInnerPad * 2;
+
+    for (final cardId in _faceUpCards) {
+      if (x + _kChipW > maxX) {
+        x = _kPad;
+        y += _kChipH + _kChipGap;
+      }
+      if (y + _kChipH > maxY) break; // clamp to face-up area
+
+      _drawFaceUpChip(canvas, cardId, x, y);
+      x += _kChipW + _kChipGap;
+    }
+
+    // Face-down stack at bottom of card area.
+    if (_faceDownCount > 0) {
+      final stackY = top + _kCardAreaHeight - _kFdH - _kInnerPad;
+      _drawFaceDownStack(canvas, _kPad, stackY);
+    }
+  }
+
+  void _drawBidArea(Canvas canvas) {
+    final top = _kHeaderHeight + _kCardAreaHeight;
+    final bidRRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, top, _kPileWidth, _kBidAreaHeight),
+      const Radius.circular(_kCornerRadius),
+    );
+    // Use a warm orange tint only when someone has actually bid (bidderId set).
+    final hasBid = _currentBidderId != null;
+    final bidBgColor = hasBid ? const Color(0xFFFFF3E8) : _kBidAreaBg;
+    canvas.drawRRect(bidRRect, Paint()..color = bidBgColor);
+
+    if (hasBid && _currentBid != null) {
+      // Highlighted bid amount.
+      final bidK = _currentBid! ~/ 1000;
+      final bidLabel = '\$${bidK}K';
+
+      final bidAmountPainter = TextPainter(
+        text: TextSpan(
+          text: bidLabel,
+          style: const TextStyle(
+            color: _kBidHighlight,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      bidAmountPainter.paint(
+        canvas,
+        Offset(
+          (_kPileWidth - bidAmountPainter.width) / 2,
+          top + _kInnerPad,
+        ),
+      );
+
+      // Bidder name below.
+      final bidderLabel = _bidderName();
+      if (bidderLabel.isNotEmpty) {
+        final bidderPainter = TextPainter(
+          text: TextSpan(
+            text: bidderLabel,
+            style: const TextStyle(
+              color: _kTextMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          ellipsis: '…',
+        )..layout(maxWidth: _kPileWidth - _kPad * 2);
+        bidderPainter.paint(
+          canvas,
+          Offset(
+            (_kPileWidth - bidderPainter.width) / 2,
+            top + _kInnerPad + bidAmountPainter.height + 2,
+          ),
+        );
+      }
+    } else {
+      // No bid yet.
+      final noBidPainter = TextPainter(
+        text: const TextSpan(
+          text: '입찰 없음',
+          style: TextStyle(
+            color: _kNoBidColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      noBidPainter.paint(
+        canvas,
+        Offset(
+          (_kPileWidth - noBidPainter.width) / 2,
+          top + (_kBidAreaHeight - noBidPainter.height) / 2,
+        ),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Card drawing helpers
+  // ---------------------------------------------------------------------------
+
+  void _drawFaceUpChip(Canvas canvas, String cardId, double x, double y) {
+    final chipRect = Rect.fromLTWH(x, y, _kChipW, _kChipH);
+    final chipRRect =
+        RRect.fromRectAndRadius(chipRect, const Radius.circular(3));
+
     final chipColor = _chipColorForCard(cardId);
     canvas.drawRRect(chipRRect, Paint()..color = chipColor);
     canvas.drawRRect(
       chipRRect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0
+        ..strokeWidth = 0.8
         ..color = chipColor.withAlpha(200),
     );
 
-    // Abbreviated label.
     final label = _labelForCard(cardId);
     final tp = TextPainter(
       text: TextSpan(
         text: label,
         style: const TextStyle(
           color: Color(0xFFFFFFFF),
-          fontSize: 7,
+          fontSize: 9,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -203,33 +386,34 @@ class StockpilePileComponent extends PositionComponent {
     tp.paint(
       canvas,
       Offset(
-        x + (_kCardChipWidth - tp.width) / 2,
-        y + (_kCardChipHeight - tp.height) / 2,
+        x + (_kChipW - tp.width) / 2,
+        y + (_kChipH - tp.height) / 2,
       ),
     );
   }
 
   void _drawFaceDownStack(Canvas canvas, double x, double y) {
-    final visibleCount = _faceDownCount.clamp(1, 4);
+    final visibleCount = _faceDownCount.clamp(1, 5);
     for (var i = visibleCount - 1; i >= 0; i--) {
-      final offsetX = x + i * 1.5;
-      final offsetY = y - i * 1.5;
-      final chipRect =
-          Rect.fromLTWH(offsetX, offsetY, _kFaceDownWidth, _kFaceDownHeight);
-      final chipRRect =
-          RRect.fromRectAndRadius(chipRect, const Radius.circular(3));
+      final ox = x + i * 1.5;
+      final oy = y - i * 1.5;
+      final chipRRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(ox, oy, _kFdW, _kFdH),
+        const Radius.circular(2.5),
+      );
       canvas.drawRRect(chipRRect, _faceDownPaint);
       canvas.drawRRect(chipRRect, _faceDownBorderPaint);
     }
 
-    // Count badge.
+    // Count label next to the stack.
     if (_faceDownCount > 0) {
       final countPainter = TextPainter(
         text: TextSpan(
-          text: 'x$_faceDownCount',
+          text: '×$_faceDownCount',
           style: const TextStyle(
-            color: Color(0xFF888888),
+            color: _kTextMuted,
             fontSize: 8,
+            fontWeight: FontWeight.w600,
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -237,54 +421,11 @@ class StockpilePileComponent extends PositionComponent {
       countPainter.paint(
         canvas,
         Offset(
-          x + _kFaceDownWidth + 3,
-          y + (_kFaceDownHeight - countPainter.height) / 2,
+          x + _kFdW + 4,
+          y + (_kFdH - countPainter.height) / 2,
         ),
       );
     }
-  }
-
-  void _drawBidBadge(Canvas canvas) {
-    const badgeMargin = 6.0;
-    final badgeRect = Rect.fromLTWH(
-      badgeMargin,
-      _kPileHeight - _kBadgeHeight - badgeMargin,
-      _kPileWidth - badgeMargin * 2,
-      _kBadgeHeight,
-    );
-    final badgeRRect =
-        RRect.fromRectAndRadius(badgeRect, const Radius.circular(6));
-
-    canvas.drawRRect(badgeRRect, _badgePaint);
-    canvas.drawRRect(badgeRRect, _badgeBorderPaint);
-
-    final bidText = _currentBid != null
-        ? '\$${_currentBid! ~/ 1000}K  ${_bidderName()}'
-        : 'No bid';
-    final bidColor = _currentBid != null
-        ? const Color(0xFFFFD700)
-        : const Color(0xFF888888);
-
-    final tp = TextPainter(
-      text: TextSpan(
-        text: bidText,
-        style: TextStyle(
-          color: bidColor,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: badgeRect.width - 8);
-    tp.paint(
-      canvas,
-      Offset(
-        badgeRect.left + (badgeRect.width - tp.width) / 2,
-        badgeRect.top + (badgeRect.height - tp.height) / 2,
-      ),
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -296,19 +437,17 @@ class StockpilePileComponent extends PositionComponent {
     return _playerNames[_currentBidderId!] ?? _currentBidderId!;
   }
 
-  /// Returns a chip fill colour derived from the card ID.
   Color _chipColorForCard(String cardId) {
     if (cardId.startsWith('stock_')) {
       final companyId = cardId.substring(6);
       return kCompanyColors[companyId] ?? const Color(0xFF888888);
     }
-    if (cardId.startsWith('fee_')) return const Color(0xFF555555);
-    if (cardId == 'action_boom') return const Color(0xFF4CAF50);
-    if (cardId == 'action_bust') return const Color(0xFFE05252);
-    return const Color(0xFF666666);
+    if (cardId.startsWith('fee_')) return const Color(0xFF666655);
+    if (cardId == 'action_boom') return const Color(0xFF3A9B5A);
+    if (cardId == 'action_bust') return const Color(0xFFB83A3A);
+    return const Color(0xFF777766);
   }
 
-  /// Returns a short display label for the card chip.
   String _labelForCard(String cardId) {
     if (cardId.startsWith('stock_')) {
       final companyId = cardId.substring(6);

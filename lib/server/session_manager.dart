@@ -136,6 +136,14 @@ class SessionManager {
     );
   }
 
+  /// Returns `true` if [sink] is the *current* active sink for [playerId].
+  ///
+  /// Used by [GameServer._cleanUpOrphan] to distinguish a stale (replaced)
+  /// socket's onDone from a genuine disconnect on the current socket.
+  bool isCurrentSink(String playerId, SessionSink sink) {
+    return _sessions[playerId]?.sink == sink;
+  }
+
   /// Sends [data] to the specified player.  No-op if the player is not found
   /// or is currently disconnected.
   void send(String playerId, String data) {
