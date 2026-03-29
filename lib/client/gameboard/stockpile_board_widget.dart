@@ -110,6 +110,10 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
   // Flame
   late final BoardWorldGame _boardGame;
 
+  // Header height measurement
+  final _headerKey = GlobalKey();
+  double _headerHeight = 56;
+
   // Toast state
   String? _toastMessage;
   bool _toastVisible = false;
@@ -130,6 +134,9 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
     );
     // Forward the initial board state so piles/prices are visible on first render.
     _boardGame.updateBoardView(widget.boardView);
+
+    // Measure header height after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateHeaderHeight());
 
     // Toast animation
     _toastAnim = AnimationController(
@@ -162,6 +169,13 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
         _showToast(latest);
       }
     }
+  }
+
+  void _updateHeaderHeight() {
+    final ctx = _headerKey.currentContext;
+    if (ctx == null) return;
+    final h = ctx.size?.height ?? _headerHeight;
+    if (h != _headerHeight) setState(() => _headerHeight = h);
   }
 
   void _showToast(String message) {
@@ -206,10 +220,10 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
         // Flame board — fills entire area
         GameWidget(game: _boardGame),
 
-        // Public forecast panel — right side
+        // Public forecast panel — right side, below the phase header
         if (_publicForecast.isNotEmpty)
           Positioned(
-            top: 8,
+            top: _headerHeight + 8,
             right: 8,
             child: _buildPublicForecast(context),
           ),
@@ -220,6 +234,7 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
           left: 0,
           right: 0,
           child: Column(
+            key: _headerKey,
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -279,11 +294,6 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
             padding: EdgeInsets.zero,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '덱 ${widget.boardView.deckRemaining}장',
-            style: Theme.of(context).textTheme.bodySmall,
           ),
           const Spacer(),
           // Server status toggle
