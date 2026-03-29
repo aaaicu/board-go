@@ -65,7 +65,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   void _connectManual() {
-    final ip = _ipController.text.trim();
+    // Strip brackets that may appear when pasting IPv6-style notation like [192.168.0.1]
+    final ip = _ipController.text.trim().replaceAll('[', '').replaceAll(']', '');
     final port = _portController.text.trim();
     if (ip.isEmpty || port.isEmpty) return;
     final url = 'ws://$ip:$port/ws';

@@ -110,5 +110,14 @@ class BoardWorldGame extends FlameGame with ScaleDetector {
     // speed regardless of zoom level.
     camera.viewfinder.position -=
         info.delta.global / camera.viewfinder.zoom;
+
+    // Clamp camera position to world content bounds.
+    // World content spans x: [-450, 450], y: [-320, 390] — add padding so
+    // the edge of the board can reach the screen edge but void stays hidden.
+    final pos = camera.viewfinder.position;
+    camera.viewfinder.position = Vector2(
+      pos.x.clamp(-520.0, 520.0),
+      pos.y.clamp(-420.0, 470.0),
+    );
   }
 }

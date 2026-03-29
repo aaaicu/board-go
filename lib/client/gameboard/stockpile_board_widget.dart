@@ -197,36 +197,43 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
 
   @override
   Widget build(BuildContext context) {
+    // Flame's GameWidget renders via its own graphics pipeline and can appear
+    // above normal Flutter Column children. To guarantee the phase header is
+    // always visible, we use a full-screen Stack where GameWidget fills the
+    // background and the header is the last child (highest z-order).
     return Stack(
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildPhaseHeader(context),
-            if (widget.serverStatusWidget != null) widget.serverStatusWidget!,
-            const Divider(height: 1),
-            Expanded(
-              child: Stack(
-                children: [
-                  // Flame board — fills the play area
-                  GameWidget(game: _boardGame),
-                  // Public forecast banner — top overlay
-                  if (_publicForecast.isNotEmpty)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      right: 8,
-                      child: _buildPublicForecast(context),
-                    ),
-                ],
-              ),
-            ),
-          ],
+        // Flame board — fills entire area
+        GameWidget(game: _boardGame),
+
+        // Public forecast panel — right side
+        if (_publicForecast.isNotEmpty)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: _buildPublicForecast(context),
+          ),
+
+        // Phase header — always on top, pinned to the top edge
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPhaseHeader(context),
+              if (widget.serverStatusWidget != null) widget.serverStatusWidget!,
+              const Divider(height: 1),
+            ],
+          ),
         ),
-        // Action toast banner
+
+        // Action toast banner — below the header
         if (_toastVisible && _toastMessage != null)
           Positioned(
-            top: 12,
+            top: 60,
             left: 12,
             right: 12,
             child: FadeTransition(
@@ -361,44 +368,82 @@ class _StockpileBoardWidgetState extends State<StockpileBoardWidget>
 
     final imgPath = _companyImages[company];
 
-    return Card(
-      color: color.withValues(alpha: 0.08),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: color.withValues(alpha: 0.4)),
+    return Container(
+      width: 130,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5EFE0).withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.6), width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            const Icon(Icons.visibility, size: 18),
-            const SizedBox(width: 8),
-            const Text('공개 예측: ',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            if (imgPath != null) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Image.asset(imgPath,
-                    width: 28, height: 28, fit: BoxFit.cover),
-              ),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              '$shortName ',
-              style: TextStyle(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.visibility, size: 13, color: Color(0xFF5A4A2A)),
+              SizedBox(width: 4),
+              Text(
+                '공개 예측',
+                style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: color,
-                  fontSize: 16),
+                  fontSize: 11,
+                  color: Color(0xFF5A4A2A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (imgPath != null)
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color, width: 2),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.asset(imgPath, fit: BoxFit.cover),
+              ),
             ),
-            Text(
+          const SizedBox(height: 8),
+          Text(
+            shortName,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: color,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: changeColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: changeColor.withValues(alpha: 0.5), width: 1.5),
+            ),
+            child: Text(
               changeStr,
               style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: changeColor,
-                  fontSize: 16),
+                fontWeight: FontWeight.bold,
+                color: changeColor,
+                fontSize: 18,
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
