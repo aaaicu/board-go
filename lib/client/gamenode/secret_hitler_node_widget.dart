@@ -109,8 +109,9 @@ class SecretHitlerNodeWidget extends StatelessWidget {
         ...playerView.allowedActions.map((action) => Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
           child: PlayerActionWidget(
-             action: action,
-             onAction: (a, d) => onAction(a, d),
+             actionType: action.actionType,
+             label: action.label,
+             onAction: () => onAction(action.actionType, action.params),
           ),
         )).toList(),
       ],
