@@ -526,9 +526,8 @@ class StockpileRules extends GamePackRules {
       final currentBid = sp['currentBid'] as int? ?? 0;
 
       // Minimum bid is current pile bid + 1 (must be strictly higher).
-      // In the first round, pile currentBid starts at 0, so amount 0 is valid
-      // only if no one has bid yet.
-      final minValidBid = currentBid > 0 ? currentBid + 1 : 0;
+      // $0 is only valid on a completely unclaimed pile (no prior bidder).
+      final minValidBid = currentBidderId != null ? currentBid + 1 : 0;
 
       // If the minimum valid bid already exceeds the cap, this pile is locked —
       // no further bids are possible. Skip it entirely so no button appears.

@@ -633,6 +633,7 @@ class GameServer {
       data: action.data,
     );
 
+    final versionBefore = _sessionState.version;
     _sessionState = _gamePackRules.applyAction(
       _sessionState,
       action.playerId,
@@ -643,6 +644,9 @@ class GameServer {
     // 7. version++ — already handled by applyAction / addLog chain
     //    (GameSessionState.addLog increments version)
     // ------------------------------------------------------------------
+
+    // If the action was silently rejected (state unchanged), do not broadcast.
+    if (_sessionState.version == versionBefore) return;
 
     // ------------------------------------------------------------------
     // 8. Check game end
