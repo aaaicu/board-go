@@ -374,6 +374,7 @@ class StockpileRules extends GamePackRules {
         'stockPrices': Map<String, int>.from(prices),
         'stockpiles': stockpilesPublic,
         'publicForecast': publicForecast,
+        'cash': Map<String, int>.from(cash),
       },
     );
   }
@@ -525,9 +526,8 @@ class StockpileRules extends GamePackRules {
       final currentBid = sp['currentBid'] as int? ?? 0;
 
       // Minimum bid is current pile bid + 1 (must be strictly higher).
-      // In the first round, pile currentBid starts at 0, so amount 0 is valid
-      // only if no one has bid yet.
-      final minValidBid = currentBid > 0 ? currentBid + 1 : 0;
+      // $0 is only valid on a completely unclaimed pile (no prior bidder).
+      final minValidBid = currentBidderId != null ? currentBid + 1 : 0;
 
       // If the minimum valid bid already exceeds the cap, this pile is locked —
       // no further bids are possible. Skip it entirely so no button appears.
@@ -1147,24 +1147,26 @@ class StockpileRules extends GamePackRules {
         return _setActiveDemandPlayer(state, data, nextRebidPlayer, gameState);
       }
 
-      // All outbid players have acted in this rebid round.
-      // Determine if any new outbids occurred during this round by examining
-      // which players are now in outbidPlayers but were NOT in the current
-      // rebid acted set (i.e., they weren't yet called to act).
-      // A new outbid occurred when a player is in outbidPlayers but was not
-      // the one who just acted and is not in rebidActed.
-      final newOutbidPlayers = outbidPlayers
-          .where((pid) => !rebidActed.contains(pid))
-          .toList();
+      // All outbid players scheduled for this round have acted.
+      // Resolve if no one is still outbid, OR if every remaining outbid player
+      // passed this round (they concede their piles).
+      // Note: a player who bid and got re-outbid in the same round is still in
+      // outbidPlayers — they must get a new rebid round, not be silently resolved.
+      final passedPlayers = List<String>.from(
+          data['demandPassedPlayers'] as List? ?? []);
+      final allRemainingPassed =
+          outbidPlayers.isNotEmpty &&
+          outbidPlayers.every(passedPlayers.contains);
 
-      if (newOutbidPlayers.isEmpty) {
-        // No further outbids — resolve.
+      if (outbidPlayers.isEmpty || allRemainingPassed) {
+        // No one is outbid, or everyone who is outbid chose to pass — resolve.
         final newGameState = gameState.copyWith(data: data);
         return _resolveBidsAndTransitionToAction(
             state.copyWith(gameState: newGameState), data, playerOrder);
       }
 
-      // More players were outbid during this rebid round — start another.
+      // At least one player is still outbid and hasn't conceded — start another
+      // rebid round so they get a chance to respond.
       return _startRebidRound(state, data, playerOrder, outbidPlayers);
     }
   }
