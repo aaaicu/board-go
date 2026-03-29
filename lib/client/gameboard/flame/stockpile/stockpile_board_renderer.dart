@@ -54,6 +54,10 @@ class StockpileBoardRenderer implements GameBoardRenderer {
   // Nullable because onMount is async — updateBoardView may fire before init.
   PlayerScoreboardComponent? _scoreboard;
 
+  /// Cached board view received before [onMount] completed.
+  /// Replayed at the end of [onMount] so the scoreboard shows from game start.
+  BoardView? _pendingBoardView;
+
   // Track rows — indexed the same as kStockpileCompanies.
   final List<StockTrackRowComponent> _trackRows = [];
   final List<StockpilePileComponent> _piles = [];
@@ -84,6 +88,12 @@ class StockpileBoardRenderer implements GameBoardRenderer {
 
     // Build the six vertical-stacked track rows.
     await _buildTrackRows();
+
+    // Replay any board view that arrived before init completed.
+    if (_pendingBoardView != null) {
+      onBoardViewUpdate(_pendingBoardView!);
+      _pendingBoardView = null;
+    }
   }
 
   @override
@@ -92,6 +102,12 @@ class StockpileBoardRenderer implements GameBoardRenderer {
 
     // Guard: only process Stockpile pack updates.
     if (data['packId'] != 'stockpile') return;
+
+    // onMount is async — buffer the view until init completes.
+    if (_scoreboard == null) {
+      _pendingBoardView = boardView;
+      return;
+    }
 
     _updateScoreboard(boardView);
     _updateStockPrices(data);

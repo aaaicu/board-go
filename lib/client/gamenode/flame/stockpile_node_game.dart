@@ -108,6 +108,12 @@ class StockpileNodeGame extends FlameGame with TapCallbacks {
         // Logo unavailable — HandCardComponent will fall back to monogram.
       }
     }
+
+    // If updateHand() was called before sprites finished loading, rebuild so
+    // cards get the correct logo rather than the monogram fallback.
+    if (_hand.isNotEmpty) {
+      _rebuildCards();
+    }
   }
 
   /// Called by Flame when the GameWidget is first laid out (or resized).
