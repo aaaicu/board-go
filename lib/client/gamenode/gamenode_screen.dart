@@ -1123,6 +1123,12 @@ class _GameNodeScreenState extends State<GameNodeScreen>
               color: AppTheme.onSurfaceMuted,
               onPressed: _showNicknameDialog,
             ),
+            IconButton(
+              icon: const Icon(Icons.home_outlined, size: 20),
+              tooltip: '홈으로',
+              color: AppTheme.onSurfaceMuted,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
           ],
         ),
       ),
