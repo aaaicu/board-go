@@ -1079,6 +1079,12 @@ class _GameNodeScreenState extends State<GameNodeScreen>
         ),
         child: Row(
           children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+              tooltip: '뒤로',
+              color: AppTheme.onSurfaceMuted,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
             Container(
               width: 36,
               height: 36,
@@ -1122,12 +1128,6 @@ class _GameNodeScreenState extends State<GameNodeScreen>
               tooltip: '닉네임 변경',
               color: AppTheme.onSurfaceMuted,
               onPressed: _showNicknameDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-              tooltip: '뒤로',
-              color: AppTheme.onSurfaceMuted,
-              onPressed: () => Navigator.of(context).pop(),
             ),
           ],
         ),
