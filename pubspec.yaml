@@ -24,6 +24,9 @@ dependencies:
   # Game pack execution
   webview_flutter: ^4.4.0
 
+  # Flame game engine (board rendering, camera, effects)
+  flame: ^1.36.0
+
   # State management
   riverpod: ^2.5.0
 

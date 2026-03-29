@@ -54,6 +54,7 @@ class _GameNodeScreenState extends State<GameNodeScreen>
     with TickerProviderStateMixin {
   WsClient? _client;
   StreamSubscription<WsConnectionState>? _connStateSub;
+  StreamSubscription<dynamic>? _msgSub;
   _NodePhase _phase = _NodePhase.discovery;
   bool _disposing = false;
 
@@ -172,6 +173,7 @@ class _GameNodeScreenState extends State<GameNodeScreen>
     _disposing = true;
     WakelockPlus.disable();
     _connStateSub?.cancel();
+    _msgSub?.cancel();
     _client?.dispose();
     _notifTimer?.cancel();
     _notifAnim.dispose();
@@ -246,6 +248,8 @@ class _GameNodeScreenState extends State<GameNodeScreen>
 
     // Dispose of any prior client before creating a new one.
     await _connStateSub?.cancel();
+    await _msgSub?.cancel();
+    _msgSub = null;
     await _client?.dispose();
 
     final client = WsClient(
@@ -273,7 +277,7 @@ class _GameNodeScreenState extends State<GameNodeScreen>
     }
 
     // Listen for all incoming messages.
-    client.messages.listen((raw) {
+    _msgSub = client.messages.listen((raw) {
       if (raw == wsClientReconnectHint) {
         // Auto-reconnect succeeded — re-send JOIN with the saved token.
         _sendJoin(client, identity);

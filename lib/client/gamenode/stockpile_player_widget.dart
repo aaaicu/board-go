@@ -1,7 +1,11 @@
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import '../../shared/game_pack/views/player_view.dart';
 import '../shared/app_theme.dart';
+import 'flame/hand_card_component.dart'
+    show kCardWidth, kCardHeight, kCardSelectedLift;
+import 'flame/stockpile_node_game.dart';
 
 // ---------------------------------------------------------------------------
 // Company metadata (kept local — no shared constants package yet)
@@ -16,15 +20,15 @@ const _companyShort = {
   'tot': 'TOT',
 };
 
-// Company identity colors — muted for dark backgrounds while remaining
-// visually distinct. Must match stockpile_board_widget.dart exactly.
+// Company identity colors — original board-game palette.
+// Must match stockpile_board_widget.dart and kCompanyColors exactly.
 const _companyColors = {
-  'aauto': Color(0xFF6B9FD4), // steel blue
-  'epic': Color(0xFF6BBF6B), // muted green
-  'fed': Color(0xFFB5845A), // warm brown
-  'lehm': Color(0xFFAB82C5), // muted purple
-  'sip': Color(0xFFE8A857), // amber orange
-  'tot': Color(0xFFE87D9A), // muted pink
+  'aauto': Color(0xFFD44B3A), // red   — American Automotive
+  'epic': Color(0xFFE8A83C), // amber — Epic Electric
+  'fed': Color(0xFF4A7BC8), // blue  — Cosmic Computers
+  'lehm': Color(0xFF9B6BBF), // purple — Leading Laboratories
+  'sip': Color(0xFF7A7A7A), // grey  — Stanford Steel
+  'tot': Color(0xFF4A9B6B), // green — Bottomline Bank
 };
 
 const _companyImages = {
@@ -85,7 +89,6 @@ const _kUseBoom = 'USE_BOOM';
 const _kUseBust = 'USE_BUST';
 const _kSellStock = 'SELL_STOCK';
 
-const _kMaxBidAmount = 25000;
 
 // ---------------------------------------------------------------------------
 // StockpilePlayerWidget
@@ -123,6 +126,51 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
   /// Index into [playerView.hand] selected in step 1 of the supply phase.
   /// Null means step 1 (card selection); non-null means step 2 (pile selection).
   int? _selectedCardIndex;
+
+  // ---------------------------------------------------------------------------
+  // Flame game instances
+  // ---------------------------------------------------------------------------
+
+  /// Flame game used to render the supply-phase hand card fan.
+  late final StockpileNodeGame _handGame;
+
+  // ---------------------------------------------------------------------------
+  // Per-pile bid state (demand phase)
+  // ---------------------------------------------------------------------------
+
+  /// All selectable bid amounts (×1000 each).
+  static const List<int> _kBidValues = [
+    0, 1000, 3000, 6000, 10000, 15000, 20000, 25000,
+  ];
+
+  /// Selected bid amount per pile index.
+  final Map<int, int> _pileBidAmount = {};
+
+  /// Which pile is selected in step 1 of the demand phase.
+  /// null = step 1 (pile selection); non-null = step 2 (amount selection).
+  int? _selectedBidPileIdx;
+
+  /// Minimum required bid for [pileIdx], derived from allowed actions.
+  /// Returns 0 if the pile is unclaimed (no prior bid).
+  int _minBidFor(int pileIdx) {
+    int? min;
+    for (final a in widget.playerView.allowedActions) {
+      if (a.actionType != _kBid) continue;
+      if ((a.params['stockpileIndex'] as int?) != pileIdx) continue;
+      final v = a.params['amount'] as int? ?? 0;
+      if (min == null || v < min) min = v;
+    }
+    return min ?? 0;
+  }
+
+  /// Selected bid amount for [pileIdx], defaulting to the first valid value.
+  /// If a saved value is no longer valid (below minBid), it is discarded.
+  int _bidAmountFor(int pileIdx) {
+    final minBid = _minBidFor(pileIdx);
+    final saved = _pileBidAmount[pileIdx];
+    if (saved != null && saved >= minBid) return saved;
+    return _kBidValues.firstWhere((v) => v >= minBid, orElse: () => _kBidValues.last);
+  }
 
   // ---------------------------------------------------------------------------
   // Typed data accessors
@@ -167,12 +215,80 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
   // ---------------------------------------------------------------------------
 
   @override
+  void initState() {
+    super.initState();
+
+    _handGame = StockpileNodeGame()
+      ..onCardTap = _onFlameCardTap;
+
+    // After the first frame, GameWidget has been laid out and onGameResize has
+    // already fired (size.x > 0), so it is safe to push the initial hand state.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncHandGame();
+    });
+  }
+
+  @override
   void didUpdateWidget(StockpilePlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     // Reset card selection when the hand changes (e.g. after placing a card).
     if (oldWidget.playerView.hand.length != widget.playerView.hand.length) {
       _selectedCardIndex = null;
     }
+
+    // Reset pile selection when phase changes.
+    if (oldWidget.playerView.data['phase'] != widget.playerView.data['phase']) {
+      _selectedBidPileIdx = null;
+    } else if (_selectedBidPileIdx != null) {
+      // Reset if the selected pile is no longer biddable.
+      final stillBiddable = widget.playerView.allowedActions.any(
+        (a) => a.actionType == _kBid &&
+            (a.params['stockpileIndex'] as int?) == _selectedBidPileIdx,
+      );
+      if (!stillBiddable) _selectedBidPileIdx = null;
+    }
+
+    // Push hand state into the Flame game.
+    _syncHandGame();
+  }
+
+  @override
+  void dispose() {
+    _handGame.onCardTap = null;
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Flame synchronisation helpers
+  // ---------------------------------------------------------------------------
+
+  void _syncHandGame() {
+    final hand = widget.playerView.hand;
+    final faceUpActions = widget.playerView.allowedActions
+        .where((a) => a.actionType == _kPlaceFaceUp)
+        .toList();
+    final faceDownActions = widget.playerView.allowedActions
+        .where((a) => a.actionType == _kPlaceFaceDown)
+        .toList();
+
+    final interactiveFlags = List.generate(hand.length, (idx) {
+      return faceUpActions.any((a) => (a.params['cardIndex'] as int?) == idx) ||
+          faceDownActions.any((a) => (a.params['cardIndex'] as int?) == idx);
+    });
+
+    _handGame
+      ..updateMode(NodeGameMode.handOnly)
+      ..updateHand(hand, interactiveFlags)
+      ..setSelectedCard(_selectedCardIndex);
+  }
+
+  void _onFlameCardTap(int index) {
+    if (!mounted) return;
+    setState(() {
+      _selectedCardIndex = index;
+      _handGame.setSelectedCard(index);
+    });
   }
 
   void _onAction(String type, Map<String, dynamic> params) {
@@ -295,7 +411,7 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
     );
   }
 
-  /// Step 1 — horizontal list of hand cards; tappable if actions exist for them.
+  /// Step 1 — Flame-rendered hand card fan; tappable if actions exist for them.
   Widget _buildCardSelection(
     List<String> hand,
     List<dynamic> faceUpActions,
@@ -308,31 +424,15 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: hand.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final cardId = entry.value;
-          final hasActions = faceUpActions.any(
-                (a) => (a.params['cardIndex'] as int?) == idx,
-              ) ||
-              faceDownActions.any(
-                (a) => (a.params['cardIndex'] as int?) == idx,
-              );
+    // Height = card + lift headroom.
+    final gameHeight = kCardHeight + kCardSelectedLift + 16.0;
+    // Width = total card fan width, capped at screen width.
+    final fanWidth = hand.length * kCardWidth + (hand.length - 1) * 10.0;
 
-          return GestureDetector(
-            onTap: hasActions
-                ? () => setState(() => _selectedCardIndex = idx)
-                : null,
-            child: _buildHandCard(
-              cardId,
-              selected: false,
-              dimmed: !hasActions,
-            ),
-          );
-        }).toList(),
-      ),
+    return SizedBox(
+      height: gameHeight,
+      width: fanWidth.clamp(kCardWidth, double.infinity),
+      child: GameWidget(game: _handGame),
     );
   }
 
@@ -423,23 +523,32 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
   }
 
   // ---------------------------------------------------------------------------
-  // Demand phase
+  // Demand phase — 2-step UX
   // ---------------------------------------------------------------------------
 
   Widget _buildDemandPhase(BuildContext context) {
+    if (_selectedBidPileIdx == null) {
+      return _buildDemandPileSelection(context);
+    }
+    return _buildDemandAmountSelection(context, _selectedBidPileIdx!);
+  }
+
+  /// Step 1 — choose which pile to bid on.
+  Widget _buildDemandPileSelection(BuildContext context) {
     final myBid = _myBid;
     final canPass = _hasAction(_kDemandPass);
 
-    final bidsByPile = <int, List<dynamic>>{};
+    final biddablePiles = <int>[];
     for (final a in widget.playerView.allowedActions
         .where((a) => a.actionType == _kBid)) {
       final idx = a.params['stockpileIndex'] as int? ?? 0;
-      bidsByPile.putIfAbsent(idx, () => []).add(a);
+      if (!biddablePiles.contains(idx)) biddablePiles.add(idx);
     }
+    biddablePiles.sort();
 
     final subtitle = _isRebidRound
         ? '재입찰 라운드 (${_demandRound - 1}회차) — 더 높게 입찰하거나 통과하세요'
-        : '원하는 더미에 입찰하세요';
+        : '입찰할 더미를 선택하세요';
 
     return _PhaseCard(
       title: '수요 단계',
@@ -450,25 +559,19 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
           // 재입찰 알림 배너
           if (_isOutbid) ...[
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: AppTheme.errorContainer,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      size: 18, color: AppTheme.error),
+                  const Icon(Icons.warning_amber_rounded, size: 18, color: AppTheme.error),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
                       '다른 플레이어에게 밀렸습니다! 재입찰하세요',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.error,
-                      ),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.error),
                     ),
                   ),
                 ],
@@ -477,7 +580,7 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
             const SizedBox(height: 10),
           ],
 
-          // 보유 현금 칩
+          // 보유 현금
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -485,128 +588,67 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.account_balance_wallet,
-                    size: 16, color: AppTheme.tertiary),
+                const Icon(Icons.account_balance_wallet, size: 16, color: AppTheme.tertiary),
                 const SizedBox(width: 8),
-                Text(
-                  '보유 현금',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.onSurfaceMuted),
-                ),
+                const Text('보유 현금', style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceMuted)),
                 const Spacer(),
                 Text(
                   _formatCash(_myCash),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.tertiary,
-                  ),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.tertiary),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
 
-          // 더미별 입찰 카드
-          ...bidsByPile.entries.map((entry) {
-            final pileIdx = entry.key;
-            final pileActions = entry.value;
-
-            // 최소 입찰 vs 전액 입찰 분리
-            pileActions.sort((a, b) {
-              final aAmt = a.params['amount'] as int? ?? 0;
-              final bAmt = b.params['amount'] as int? ?? 0;
-              return aAmt.compareTo(bAmt);
-            });
-            final minAction =
-                pileActions.isNotEmpty ? pileActions.first : null;
-            final allInAction =
-                pileActions.length > 1 ? pileActions.last : null;
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 더미 번호 배지
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '더미 ${pileIdx + 1}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.primary,
-                          ),
-                        ),
+          // 더미 선택 카드
+          ...biddablePiles.map((pileIdx) {
+            final minBid = _minBidFor(pileIdx);
+            final unclaimed = minBid == 0;
+            final currentBid = unclaimed ? 0 : minBid - 1;
+            return GestureDetector(
+              onTap: () => setState(() => _selectedBidPileIdx = pileIdx),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.outlineVariant),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // 입찰 버튼 행
-                  Row(
-                    children: [
-                      if (minAction != null)
-                        Expanded(
-                          child: _BidButton(
-                            label: '최소 입찰',
-                            amount: _formatCash(
-                                minAction.params['amount'] as int? ?? 0),
-                            isPrimary: false,
-                            onTap: () =>
-                                _onAction(minAction.actionType, minAction.params),
-                          ),
-                        ),
-                      if (minAction != null && allInAction != null)
-                        const SizedBox(width: 8),
-                      if (allInAction != null)
-                        Expanded(
-                          child: _BidButton(
-                            label: '전액 입찰',
-                            amount: _formatCash(
-                                allInAction.params['amount'] as int? ?? 0),
-                            isPrimary: true,
-                            onTap: () => _onAction(
-                                allInAction.actionType, allInAction.params),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 직접 입력 (텍스트 버튼)
-                  GestureDetector(
-                    onTap: () => _showBidDialog(context, pileIdx),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      child: Text(
+                        '더미 ${pileIdx + 1}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                      ),
+                    ),
+                    const Spacer(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Icon(Icons.edit, size: 13,
-                            color: AppTheme.onSurfaceMuted),
-                        SizedBox(width: 4),
                         Text(
-                          '직접 입력',
-                          style: TextStyle(
-                              fontSize: 12, color: AppTheme.onSurfaceMuted),
+                          unclaimed ? '입찰 없음' : '현재 입찰',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted),
                         ),
+                        if (!unclaimed)
+                          Text(
+                            _formatCash(currentBid),
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    const Icon(Icons.chevron_right, size: 20, color: AppTheme.onSurfaceMuted),
+                  ],
+                ),
               ),
             );
           }),
@@ -615,30 +657,23 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
           if (myBid != null) ...[
             const SizedBox(height: 4),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: AppTheme.secondaryContainer,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.gavel,
-                      size: 16, color: AppTheme.secondary),
+                  const Icon(Icons.gavel, size: 16, color: AppTheme.secondary),
                   const SizedBox(width: 8),
                   Text(
                     '현재 입찰 — 더미 ${(myBid['stockpileIndex'] as int) + 1}',
-                    style: const TextStyle(
-                        fontSize: 13, color: AppTheme.onSecondaryContainer),
+                    style: const TextStyle(fontSize: 13, color: AppTheme.onSecondaryContainer),
                   ),
                   const Spacer(),
                   Text(
                     _formatCash(myBid['amount'] as int? ?? 0),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.secondary,
-                    ),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.secondary),
                   ),
                 ],
               ),
@@ -660,6 +695,159 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Step 2 — choose bid amount for the selected pile.
+  Widget _buildDemandAmountSelection(BuildContext context, int pileIdx) {
+    final minBid = _minBidFor(pileIdx);
+    final unclaimed = minBid == 0;
+    final currentBid = unclaimed ? 0 : minBid - 1;
+    final selected = _bidAmountFor(pileIdx);
+
+    final row1 = _kBidValues.sublist(0, 4); // 0 / 1K / 3K / 6K
+    final row2 = _kBidValues.sublist(4);    // 10K / 15K / 20K / 25K
+
+    return _PhaseCard(
+      title: '수요 단계',
+      subtitle: '입찰 금액을 선택하세요',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 헤더: 더미 정보 + 뒤로 버튼
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '더미 ${pileIdx + 1}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                unclaimed ? '입찰 없음' : '현재 입찰: ${_formatCash(currentBid)}',
+                style: const TextStyle(fontSize: 12, color: AppTheme.onSurfaceMuted),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('뒤로'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.onSurfaceMuted,
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+                onPressed: () => setState(() => _selectedBidPileIdx = null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 선택 금액 표시
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('선택 금액: ', style: TextStyle(fontSize: 14, color: AppTheme.onSurfaceMuted)),
+              Text(
+                _formatCash(selected),
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 행 1: 0 / 1K / 3K / 6K
+          Row(
+            children: row1.map((v) {
+              final enabled = v >= minBid;
+              return _buildBidCell(
+                label: v == 0 ? '0' : '${v ~/ 1000}K',
+                selected: v == selected,
+                enabled: enabled,
+                onTap: enabled ? () => setState(() => _pileBidAmount[pileIdx] = v) : null,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 6),
+
+          // 행 2: 10K / 15K / 20K / 25K
+          Row(
+            children: row2.map((v) {
+              final enabled = v >= minBid;
+              return _buildBidCell(
+                label: '${v ~/ 1000}K',
+                selected: v == selected,
+                enabled: enabled,
+                onTap: enabled ? () => setState(() => _pileBidAmount[pileIdx] = v) : null,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+
+          // 입찰 확인 버튼
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryContainer,
+              foregroundColor: AppTheme.primary,
+              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            icon: const Icon(Icons.gavel, size: 18),
+            label: Text('입찰 — ${_formatCash(selected)}'),
+            onPressed: () {
+              _onAction('BID', {
+                'stockpileIndex': pileIdx,
+                'amount': selected,
+              });
+              setState(() => _selectedBidPileIdx = null);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBidCell({
+    required String label,
+    required bool selected,
+    required bool enabled,
+    required VoidCallback? onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          decoration: BoxDecoration(
+            color: !enabled
+                ? const Color(0xFFD8D0B8)
+                : selected
+                    ? const Color(0xFFE8A040)
+                    : const Color(0xFFF0E8D0),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: enabled ? const Color(0xFFBFAF88) : const Color(0xFFD0C8B0),
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: !enabled
+                  ? const Color(0xFFAA9A80)
+                  : selected
+                      ? Colors.white
+                      : const Color(0xFF3A3020),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -717,43 +905,6 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
         ),
       ),
     );
-  }
-
-  Future<void> _showBidDialog(BuildContext context, int pileIndex) async {
-    final controller = TextEditingController();
-    final amount = await showDialog<int>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('더미 ${pileIndex + 1} 입찰'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            hintText:
-                '입찰 금액 (최대 \$25K)',
-            prefixText: '\$',
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () {
-              final val = int.tryParse(controller.text.trim());
-              Navigator.of(ctx).pop(val);
-            },
-            child: const Text('입찰'),
-          ),
-        ],
-      ),
-    );
-    if (amount != null && amount >= 0 && amount <= _myCash &&
-        amount <= _kMaxBidAmount) {
-      _onAction(_kBid, {'stockpileIndex': pileIndex, 'amount': amount});
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1203,60 +1354,6 @@ Widget _buildHandCard(
   }
 
   return card;
-}
-
-/// 입찰 버튼 — 라벨(최소/전액)과 금액을 세로로 표시.
-class _BidButton extends StatelessWidget {
-  final String label;
-  final String amount;
-  final bool isPrimary;
-  final VoidCallback onTap;
-
-  const _BidButton({
-    required this.label,
-    required this.amount,
-    required this.isPrimary,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bg =
-        isPrimary ? AppTheme.primaryContainer : AppTheme.surfaceContainerHigh;
-    final fg = isPrimary ? AppTheme.primary : AppTheme.onSurface;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: fg.withValues(alpha: 0.7),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              amount,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: fg,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Titled card wrapper used for each phase section.

@@ -418,8 +418,15 @@ class _GameboardScreenState extends State<GameboardScreen> {
         backgroundColor: AppTheme.background,
         // Hide the AppBar during gameplay — controls are embedded in the
         // board widget's phase header to avoid wasting a full line.
+        // In-game: keep a zero-height AppBar so Scaffold positions the body
+        // BELOW the system status bar. Without any AppBar, the body starts at
+        // y=0 and the status bar overlaps the phase header.
         appBar: inGame
-            ? null
+            ? AppBar(
+                toolbarHeight: 0,
+                backgroundColor: const Color(0xFFE8DFC8),
+                elevation: 0,
+              )
             : AppBar(
                 backgroundColor: AppTheme.background,
                 title: Image.asset('assets/images/logo.png', height: 36),

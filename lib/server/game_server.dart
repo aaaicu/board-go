@@ -830,6 +830,11 @@ class GameServer {
     final playerId = _sinkToPlayer.remove(sink);
     if (playerId == null) return;
 
+    // If this sink has already been replaced by a newer connection (e.g. the
+    // player reconnected before the old socket's onDone fired), ignore it.
+    // Acting on a stale onDone would wrongly mark the player as disconnected.
+    if (!_sessions.isCurrentSink(playerId, sink)) return;
+
     if (_sessions.isConnected(playerId)) {
       final displayName = _sessions.displayName(playerId) ?? playerId;
 
