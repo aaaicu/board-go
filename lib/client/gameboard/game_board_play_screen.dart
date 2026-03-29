@@ -4,6 +4,7 @@ import '../../shared/game_pack/views/board_view.dart';
 import '../../shared/game_session/session_phase.dart';
 import '../shared/app_theme.dart';
 import 'stockpile_board_widget.dart';
+import 'secret_hitler_board_widget.dart';
 
 /// Renders the shared game board visible on the iPad (GameBoard) during
 /// the [SessionPhase.inGame] phase.
@@ -63,6 +64,18 @@ class GameBoardPlayScreen extends StatelessWidget {
         showServerStatus: showServerStatus,
         onToggleServerStatus: onToggleServerStatus,
         onForceEndVote: onForceEndVote,
+      );
+    }
+    
+    if (boardView.data['packId'] == 'secret_hitler') {
+      return Stack(
+        children: [
+           SecretHitlerBoardWidget(
+             boardView: boardView,
+             playerNames: playerNames,
+           ),
+           if (serverStatusWidget != null) serverStatusWidget!,
+        ],
       );
     }
 
