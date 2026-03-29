@@ -1,0 +1,19 @@
+[
+  { "id": "lib_1", "type": "LIBERAL" },
+  { "id": "lib_2", "type": "LIBERAL" },
+  { "id": "lib_3", "type": "LIBERAL" },
+  { "id": "lib_4", "type": "LIBERAL" },
+  { "id": "lib_5", "type": "LIBERAL" },
+  { "id": "lib_6", "type": "LIBERAL" },
+  { "id": "fas_1", "type": "FASCIST" },
+  { "id": "fas_2", "type": "FASCIST" },
+  { "id": "fas_3", "type": "FASCIST" },
+  { "id": "fas_4", "type": "FASCIST" },
+  { "id": "fas_5", "type": "FASCIST" },
+  { "id": "fas_6", "type": "FASCIST" },
+  { "id": "fas_7", "type": "FASCIST" },
+  { "id": "fas_8", "type": "FASCIST" },
+  { "id": "fas_9", "type": "FASCIST" },
+  { "id": "fas_10", "type": "FASCIST" },
+  { "id": "fas_11", "type": "FASCIST" }
+]

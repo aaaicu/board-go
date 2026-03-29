@@ -7,6 +7,7 @@ import 'game_pack_manifest.dart';
 import 'game_pack_rules.dart';
 import 'packs/simple_card_game_rules.dart';
 import 'packs/stockpile_rules.dart';
+import 'packs/secret_hitler_rules.dart';
 
 /// Loads game-pack assets (manifest, card definitions) from the Flutter asset
 /// bundle and instantiates the matching [GamePackRules] implementation.
@@ -34,6 +35,7 @@ class GamePackLoader {
   static const List<String> _kKnownPackIds = [
     'simple_card_battle',
     'stockpile',
+    'secret_hitler',
   ];
 
   final AssetBundle _bundle;
@@ -98,6 +100,8 @@ class GamePackLoader {
         return SimpleCardGameRules(cardDefinitions: cards);
       case 'StockpileRules':
         return StockpileRules();
+      case 'SecretHitlerRules':
+        return SecretHitlerRules();
       default:
         throw UnsupportedError(
           'Unknown rulesClass: ${manifest.rulesClass}. '

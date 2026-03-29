@@ -28,6 +28,7 @@ import 'hand_widget.dart';
 import 'lobby_waiting_screen.dart';
 import 'player_action_widget.dart';
 import 'stockpile_player_widget.dart';
+import 'secret_hitler_node_widget.dart';
 
 /// Possible UI phases for the GameNode.
 enum _NodePhase { discovery, lobby, inGame }
@@ -1263,6 +1264,14 @@ class _GameNodeScreenState extends State<GameNodeScreen>
     // Stockpile game pack: delegate to the Stockpile-specific player widget.
     if (pv.data['packId'] == 'stockpile') {
       return StockpilePlayerWidget(
+        playerView: pv,
+        onAction: (type, params) => _sendAction(type, params),
+      );
+    }
+    
+    // Secret Hitler game pack:
+    if (pv.data['packId'] == 'secret_hitler') {
+      return SecretHitlerNodeWidget(
         playerView: pv,
         onAction: (type, params) => _sendAction(type, params),
       );

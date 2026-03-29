@@ -1,0 +1,9 @@
+{
+  "id": "secret_hitler",
+  "name": "Secret Hitler",
+  "minPlayers": 5,
+  "maxPlayers": 10,
+  "estimatedMinutes": 45,
+  "version": "1.0.0",
+  "rulesClass": "SecretHitlerRules"
+}

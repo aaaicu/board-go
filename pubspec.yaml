@@ -53,3 +53,5 @@ flutter:
     - assets/gamepacks/simple_card_battle/board_layout.json
     - assets/gamepacks/stockpile/
     - assets/gamepacks/stockpile/image/
+    - assets/gamepacks/secret_hitler/manifest.json
+    - assets/gamepacks/secret_hitler/cards.json
