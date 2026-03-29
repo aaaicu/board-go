@@ -24,8 +24,8 @@ const double _kTrackTopCentreY = -_kTotalTrackHeight / 2 + kTrackRowHeight / 2;
 /// Y position for the pile row (below the track section).
 const double _kPilePrimaryY = _kTrackTopCentreY + _kTotalTrackHeight + 60.0;
 
-/// Y centre of the player scoreboard (above round info banner).
-const double _kScoreboardCentreY = _kTrackTopCentreY - kTrackRowHeight / 2 - 88.0;
+/// Y centre of the player scoreboard (just above the track rows).
+const double _kScoreboardCentreY = _kTrackTopCentreY - kTrackRowHeight / 2 - 28.0;
 
 /// Horizontal span for distributing piles.
 const double _kPileSpan = 700.0;
