@@ -93,11 +93,14 @@ class HandCardComponent extends PositionComponent with TapCallbacks {
     required this.isInteractive,
     required this.onTap,
     required Vector2 position,
+    Sprite? logoSprite,
   }) : super(
           size: Vector2(kCardWidth, kCardHeight),
           position: position,
           anchor: Anchor.bottomCenter,
-        );
+        ) {
+    _logoSprite = logoSprite;
+  }
 
   // ---------------------------------------------------------------------------
   // Public API
@@ -114,19 +117,8 @@ class HandCardComponent extends PositionComponent with TapCallbacks {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    if (cardId.startsWith('stock_')) {
-      final companyId = cardId.substring(6);
-      final path = 'gamepacks/stockpile/image/${kNodeCompanyShort[companyId] ?? companyId.toUpperCase()}.png';
-      try {
-        _logoSprite = await Sprite.load(path, images: findGame()!.images);
-      } catch (_) {
-        // Fallback to monogram rendering in render().
-      }
-    }
-  }
+  // _logoSprite is injected via constructor by StockpileNodeGame (pre-cached).
+  // No async image loading here — avoids Android path/cache issues.
 
   // ---------------------------------------------------------------------------
   // Rendering

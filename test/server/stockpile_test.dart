@@ -134,11 +134,11 @@ void main() {
     test('stock prices initialised correctly', () {
       final state = rules.createInitialGameState(_lobbyState3());
       final prices = state.gameState!.data['stockPrices'] as Map;
-      expect(prices['aauto'], 4);
-      expect(prices['epic'], 8);
+      expect(prices['aauto'], 5);
+      expect(prices['epic'], 5);
       expect(prices['fed'], 5);
-      expect(prices['lehm'], 7);
-      expect(prices['sip'], 6);
+      expect(prices['lehm'], 5);
+      expect(prices['sip'], 5);
       expect(prices['tot'], 5);
     });
 

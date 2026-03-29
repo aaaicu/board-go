@@ -580,28 +580,6 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
             const SizedBox(height: 10),
           ],
 
-          // 보유 현금
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.account_balance_wallet, size: 16, color: AppTheme.tertiary),
-                const SizedBox(width: 8),
-                const Text('보유 현금', style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceMuted)),
-                const Spacer(),
-                Text(
-                  _formatCash(_myCash),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.tertiary),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
           // 더미 선택 카드
           ...biddablePiles.map((pileIdx) {
             final minBid = _minBidFor(pileIdx);
@@ -1158,8 +1136,6 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
     final hasForecast = forecast != null && forecast.isNotEmpty;
     final hasFees = _pendingFees > 0;
 
-    if (!hasForecast && !hasFees) return const SizedBox.shrink();
-
     return Card(
       color: AppTheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
@@ -1172,8 +1148,8 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
-              children: [
+            Row(
+              children: const [
                 Icon(Icons.lock, size: 14, color: AppTheme.onSurfaceMuted),
                 SizedBox(width: 4),
                 Text(
@@ -1183,6 +1159,19 @@ class _StockpilePlayerWidgetState extends State<StockpilePlayerWidget> {
                     fontWeight: FontWeight.bold,
                     color: AppTheme.onSurfaceMuted,
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.account_balance_wallet, size: 14, color: AppTheme.tertiary),
+                const SizedBox(width: 4),
+                const Text('보유 현금', style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceMuted)),
+                const Spacer(),
+                Text(
+                  _formatCash(_myCash),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.tertiary),
                 ),
               ],
             ),

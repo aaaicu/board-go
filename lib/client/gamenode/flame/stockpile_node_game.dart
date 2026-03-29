@@ -75,6 +75,9 @@ class StockpileNodeGame extends FlameGame with TapCallbacks {
   final List<HandCardComponent> _cardComponents = [];
   BidButtonGridComponent? _bidGrid;
 
+  /// Pre-loaded company logo sprites keyed by company id (e.g. 'aauto').
+  final Map<String, Sprite> _companySprites = {};
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -92,6 +95,19 @@ class StockpileNodeGame extends FlameGame with TapCallbacks {
     camera.viewfinder
       ..zoom = 1.0
       ..anchor = Anchor.topLeft;
+
+    // Pre-load all company logos so HandCardComponent can receive them
+    // synchronously — avoids Android async-load failures at card creation time.
+    for (final entry in kNodeCompanyShort.entries) {
+      final companyId = entry.key;
+      final short = entry.value;
+      try {
+        final img = await images.load('gamepacks/stockpile/image/$short.png');
+        _companySprites[companyId] = Sprite(img);
+      } catch (_) {
+        // Logo unavailable — HandCardComponent will fall back to monogram.
+      }
+    }
   }
 
   /// Called by Flame when the GameWidget is first laid out (or resized).
@@ -185,6 +201,10 @@ class StockpileNodeGame extends FlameGame with TapCallbacks {
     for (var i = 0; i < _hand.length; i++) {
       final interactive =
           i < _interactiveFlags.length ? _interactiveFlags[i] : true;
+      Sprite? logoSprite;
+      final cId = _hand[i].startsWith('stock_') ? _hand[i].substring(6) : null;
+      if (cId != null) logoSprite = _companySprites[cId];
+
       final card = HandCardComponent(
         cardId: _hand[i],
         cardIndex: i,
@@ -194,6 +214,7 @@ class StockpileNodeGame extends FlameGame with TapCallbacks {
           startX + i * (kCardWidth + _kCardGap),
           cardBaseY,
         ),
+        logoSprite: logoSprite,
       );
       if (i == _selectedCardIndex) card.setSelected(true);
       _cardComponents.add(card);
