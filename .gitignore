@@ -31,3 +31,4 @@ dist/
 *.swo
 *~
 .claude/flutter_01.log
+.claude/
