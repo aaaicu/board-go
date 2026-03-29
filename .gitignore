@@ -30,4 +30,4 @@ dist/
 *.swp
 *.swo
 *~
-.claude/
+.claude/flutter_01.log
