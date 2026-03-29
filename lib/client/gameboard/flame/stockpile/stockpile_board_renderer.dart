@@ -1,6 +1,5 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
-import 'package:flutter/painting.dart';
 
 import '../../../../shared/game_pack/game_board_renderer.dart';
 import '../../../../shared/game_pack/views/board_view.dart';
@@ -8,73 +7,6 @@ import 'player_scoreboard_component.dart';
 import 'stock_price_tile_component.dart';
 import 'stockpile_pile_component.dart';
 import 'table_background_component.dart';
-
-// ---------------------------------------------------------------------------
-// Phase label map (Korean)
-// ---------------------------------------------------------------------------
-
-const _kPhaseLabels = {
-  'supply': '공급 단계',
-  'demand': '수요 단계',
-  'action': '액션 단계',
-  'selling': '매매 단계',
-  'movement': '주가 이동 단계',
-  'information': '정보 단계',
-};
-
-// ---------------------------------------------------------------------------
-// _RoundInfoComponent
-// ---------------------------------------------------------------------------
-
-/// A small banner rendered just above the stock-price tracks showing the
-/// current round number and phase name.
-class _RoundInfoComponent extends PositionComponent {
-  int _round = 0;
-  int _totalRounds = 0;
-  String _phase = '';
-
-  _RoundInfoComponent({required Vector2 position})
-      : super(
-          size: Vector2(kTrackRowWidth, 36),
-          position: position,
-          anchor: Anchor.center,
-        );
-
-  void setRoundInfo({required int round, required int totalRounds, required String phase}) {
-    _round = round;
-    _totalRounds = totalRounds;
-    _phase = phase;
-  }
-
-  @override
-  void render(Canvas canvas) {
-    if (_round == 0) return;
-
-    final phaseLabel = _kPhaseLabels[_phase] ?? _phase;
-    final text = '라운드  $_round / $_totalRounds        $phaseLabel';
-
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: const TextStyle(
-          color: Color(0xFF5A4A2A),
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: kTrackRowWidth);
-
-    painter.paint(
-      canvas,
-      Offset(
-        (kTrackRowWidth - painter.width) / 2,
-        (36 - painter.height) / 2,
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Layout constants (World coordinate space, origin = screen centre).
@@ -120,7 +52,6 @@ class StockpileBoardRenderer implements GameBoardRenderer {
 
   // Component references for incremental updates.
   // Nullable because onMount is async — updateBoardView may fire before init.
-  _RoundInfoComponent? _roundInfo;
   PlayerScoreboardComponent? _scoreboard;
 
   // Track rows — indexed the same as kStockpileCompanies.
@@ -151,13 +82,6 @@ class StockpileBoardRenderer implements GameBoardRenderer {
     _scoreboard = scoreboard;
     await _world.add(scoreboard);
 
-    // Round / phase info banner above the tracks.
-    final roundInfo = _RoundInfoComponent(
-      position: Vector2(0, _kTrackTopCentreY - kTrackRowHeight / 2 - 28),
-    );
-    _roundInfo = roundInfo;
-    await _world.add(roundInfo);
-
     // Build the six vertical-stacked track rows.
     await _buildTrackRows();
   }
@@ -170,7 +94,6 @@ class StockpileBoardRenderer implements GameBoardRenderer {
     if (data['packId'] != 'stockpile') return;
 
     _updateScoreboard(boardView);
-    _updateRoundInfo(data);
     _updateStockPrices(data);
     _syncPiles(data);
   }
@@ -207,13 +130,6 @@ class StockpileBoardRenderer implements GameBoardRenderer {
     );
   }
 
-  void _updateRoundInfo(Map<String, dynamic> data) {
-    _roundInfo?.setRoundInfo(
-      round: data['round'] as int? ?? 0,
-      totalRounds: data['totalRounds'] as int? ?? 0,
-      phase: data['phase'] as String? ?? '',
-    );
-  }
 
   void _updateStockPrices(Map<String, dynamic> data) {
     final rawPrices = data['stockPrices'] as Map<String, dynamic>?;
