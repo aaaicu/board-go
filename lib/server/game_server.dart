@@ -15,6 +15,7 @@ import '../shared/game_pack/game_state.dart';
 import '../shared/game_pack/game_pack_rules.dart';
 import '../shared/game_pack/packs/simple_card_game_rules.dart';
 import '../shared/game_pack/packs/stockpile_rules.dart';
+import '../shared/game_pack/packs/secret_hitler_rules.dart';
 import '../shared/game_pack/player_action.dart';
 import '../shared/game_session/game_session_state.dart';
 import '../shared/game_session/game_log_entry.dart';
@@ -210,6 +211,8 @@ class GameServer {
   /// asset system is fully initialised.
   GamePackRules _createRulesForPack(String packId) {
     switch (packId) {
+      case 'secret_hitler':
+        return SecretHitlerRules();
       case 'stockpile':
         return StockpileRules();
       case 'simple_card_battle':

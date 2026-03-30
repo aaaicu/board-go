@@ -1,6 +1,8 @@
 {
   "id": "secret_hitler",
   "name": "Secret Hitler",
+  "nameKo": "시크릿 히틀러",
+  "description": "파시스트를 찾아내거나, 히틀러를 당선시키세요.",
   "minPlayers": 5,
   "maxPlayers": 10,
   "estimatedMinutes": 45,
