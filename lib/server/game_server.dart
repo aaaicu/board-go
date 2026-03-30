@@ -405,7 +405,10 @@ class GameServer {
     final displayName = join.displayName ?? resolvedPlayerId;
 
     // Reject new players when a game is already in progress.
-    if (!isReconnect && _sessionState.phase != SessionPhase.lobby) {
+    // Exception: players who were in the game (known playerId) can reconnect
+    // even if their reconnect token was lost (e.g. app was killed).
+    final isKnownPlayer = _sessionState.players.containsKey(join.playerId);
+    if (!isReconnect && !isKnownPlayer && _sessionState.phase != SessionPhase.lobby) {
       sink.add(jsonEncode(
         JoinRoomAckMessage(
           success: false,
