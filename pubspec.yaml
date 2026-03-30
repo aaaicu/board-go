@@ -19,7 +19,7 @@ dependencies:
   # Device discovery & connection
   bonsoir: ^6.0.0
   qr_flutter: ^4.1.0
-  mobile_scanner: ^5.0.0
+  mobile_scanner: ^7.0.0
 
   # Game pack execution
   webview_flutter: ^4.4.0

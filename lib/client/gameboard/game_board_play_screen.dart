@@ -68,14 +68,14 @@ class GameBoardPlayScreen extends StatelessWidget {
     }
     
     if (boardView.data['packId'] == 'secret_hitler') {
-      return Stack(
-        children: [
-           SecretHitlerBoardWidget(
-             boardView: boardView,
-             playerNames: playerNames,
-           ),
-           if (serverStatusWidget != null) serverStatusWidget!,
-        ],
+      return SecretHitlerBoardWidget(
+        boardView: boardView,
+        playerNames: playerNames,
+        serverStatusWidget: serverStatusWidget,
+        voteInProgress: voteInProgress,
+        showServerStatus: showServerStatus,
+        onToggleServerStatus: onToggleServerStatus,
+        onForceEndVote: onForceEndVote,
       );
     }
 

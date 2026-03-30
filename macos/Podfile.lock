@@ -3,7 +3,8 @@ PODS:
     - Flutter
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
-  - mobile_scanner (5.2.3):
+  - mobile_scanner (7.0.0):
+    - Flutter
     - FlutterMacOS
   - package_info_plus (0.0.1):
     - FlutterMacOS
@@ -22,7 +23,7 @@ PODS:
 DEPENDENCIES:
   - bonsoir_darwin (from `Flutter/ephemeral/.symlinks/plugins/bonsoir_darwin/darwin`)
   - FlutterMacOS (from `Flutter/ephemeral`)
-  - mobile_scanner (from `Flutter/ephemeral/.symlinks/plugins/mobile_scanner/macos`)
+  - mobile_scanner (from `Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin`)
   - package_info_plus (from `Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite_darwin (from `Flutter/ephemeral/.symlinks/plugins/sqflite_darwin/darwin`)
@@ -35,7 +36,7 @@ EXTERNAL SOURCES:
   FlutterMacOS:
     :path: Flutter/ephemeral
   mobile_scanner:
-    :path: Flutter/ephemeral/.symlinks/plugins/mobile_scanner/macos
+    :path: Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin
   package_info_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos
   shared_preferences_foundation:
@@ -48,14 +49,14 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/webview_flutter_wkwebview/darwin
 
 SPEC CHECKSUMS:
-  bonsoir_darwin: e3b8526c42ca46a885142df84229131dfabea842
+  bonsoir_darwin: 29c7ccf356646118844721f36e1de4b61f6cbd0e
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  mobile_scanner: 0a05256215b047af27b9495db3b77640055e8824
-  package_info_plus: 12f1c5c2cfe8727ca46cbd0b26677728972d9a5b
-  shared_preferences_foundation: 5086985c1d43c5ba4d5e69a4e8083a389e2909e6
-  sqflite_darwin: 5a7236e3b501866c1c9befc6771dfd73ffb8702d
-  wakelock_plus: 9d63063ffb7af1c215209769067c57103bde719d
-  webview_flutter_wkwebview: 29eb20d43355b48fe7d07113835b9128f84e3af4
+  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
+  package_info_plus: f0052d280d17aa382b932f399edf32507174e870
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  wakelock_plus: 917609be14d812ddd9e9528876538b2263aaa03b
+  webview_flutter_wkwebview: 8ebf4fded22593026f7dbff1fbff31ea98573c8d
 
 PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
 

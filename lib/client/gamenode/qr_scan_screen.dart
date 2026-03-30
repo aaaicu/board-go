@@ -28,7 +28,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
       appBar: AppBar(title: const Text('Scan QR Code')),
       body: MobileScanner(
         controller: _controller,
-        errorBuilder: (context, error, child) {
+        errorBuilder: (context, error) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
