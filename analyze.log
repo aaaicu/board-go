@@ -1,0 +1,236 @@
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 93.0.0 (98.0.0 available)
+  analyzer 10.0.1 (12.0.0 available)
+  async 2.13.0 (2.13.1 available)
+  bonsoir 6.0.1 (6.0.2 available)
+  bonsoir_linux 6.0.1 (6.0.2 available)
+  hooks 1.0.1 (1.0.2 available)
+  meta 1.17.0 (1.18.2 available)
+  mobile_scanner 5.2.3 (7.2.0 available)
+  native_toolchain_c 0.17.4 (0.17.6 available)
+  riverpod 2.6.1 (3.2.1 available)
+  shared_preferences 2.5.4 (2.5.5 available)
+  shared_preferences_android 2.4.20 (2.4.23 available)
+  shared_preferences_platform_interface 2.4.1 (2.4.2 available)
+  shelf_web_socket 2.0.1 (3.0.0 available)
+  sqflite_android 2.4.2+2 (2.4.2+3 available)
+  sqlite3 3.1.6 (3.2.0 available)
+  test 1.30.0 (1.31.0 available)
+  test_api 0.7.10 (0.7.11 available)
+  test_core 0.6.16 (0.6.17 available)
+  vector_math 2.2.0 (2.3.0 available)
+  webview_flutter_android 4.10.11 (4.10.15 available)
+  webview_flutter_platform_interface 2.14.0 (2.15.1 available)
+  webview_flutter_wkwebview 3.23.7 (3.24.2 available)
+  win32 5.15.0 (6.0.0 available)
+Got dependencies!
+24 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Analyzing board-go...                                           
+
+warning • Unused import: '../../../../shared/game_session/session_phase.dart' • lib/client/gameboard/flame/secret_hitler/secret_hitler_board_game.dart:5:8 • unused_import
+warning • Unused import: '../../../shared/app_theme.dart' • lib/client/gameboard/flame/secret_hitler/secret_hitler_board_game.dart:7:8 • unused_import
+  error • The argument type 'TextStyle' can't be assigned to the parameter type 'TextStyle?'.  • lib/client/gameboard/flame/secret_hitler/secret_hitler_board_game.dart:39:16 • argument_type_not_assignable
+  error • The constructor being called isn't a const constructor • lib/client/gameboard/flame/secret_hitler/secret_hitler_board_game.dart:39:16 • const_with_non_const
+   info • Use the null-aware marker '?' rather than a null check via an 'if' • lib/client/gameboard/game_board_play_screen.dart:77:12 • use_null_aware_elements
+   info • Use the null-aware marker '?' rather than a null check via an 'if' • lib/client/gameboard/game_board_play_screen.dart:85:9 • use_null_aware_elements
+warning • Unused import: 'dart:convert' • lib/client/gameboard/gameboard_screen.dart:2:8 • unused_import
+warning • Unused import: '../../shared/messages/board_view_message.dart' • lib/client/gameboard/gameboard_screen.dart:16:8 • unused_import
+warning • Unused import: '../../shared/messages/ws_message.dart' • lib/client/gameboard/gameboard_screen.dart:18:8 • unused_import
+warning • Unused import: 'qr_code_widget.dart' • lib/client/gameboard/gameboard_screen.dart:22:8 • unused_import
+warning • Unused import: '../../shared/game_pack/views/allowed_action.dart' • lib/client/gamenode/gamenode_screen.dart:11:8 • unused_import
+   info • Unnecessary braces in a string interpolation • lib/client/gamenode/gamenode_screen.dart:950:37 • unnecessary_brace_in_string_interps
+   info • Unnecessary use of multiple underscores • lib/client/gamenode/hand_widget.dart:44:31 • unnecessary_underscores
+warning • Unused import: '../../shared/game_pack/views/allowed_action.dart' • lib/client/gamenode/secret_hitler_node_widget.dart:4:8 • unused_import
+  error • The named parameter 'actionType' is required, but there's no corresponding argument • lib/client/gamenode/secret_hitler_node_widget.dart:111:18 • missing_required_argument
+  error • The named parameter 'action' isn't defined • lib/client/gamenode/secret_hitler_node_widget.dart:112:14 • undefined_named_parameter
+  error • The argument type 'void Function(dynamic, dynamic)' can't be assigned to the parameter type 'VoidCallback?'.  • lib/client/gamenode/secret_hitler_node_widget.dart:113:24 • argument_type_not_assignable
+   info • Unnecessary use of 'toList' in a spread • lib/client/gamenode/secret_hitler_node_widget.dart:115:12 • unnecessary_to_list_in_spreads
+   info • The imported package 'sqflite_common' isn't a dependency of the importing package • lib/server/game_state_store.dart:3:8 • depend_on_referenced_packages
+warning • Unnecessary cast • lib/shared/game_pack/packs/secret_hitler_rules.dart:560:42 • unnecessary_cast
+   info • Angle brackets will be interpreted as HTML • lib/shared/game_pack/packs/simple_card_game_rules.dart:65:27 • unintended_html_in_doc_comment
+   info • Angle brackets will be interpreted as HTML • lib/shared/game_pack/packs/simple_card_game_rules.dart:66:28 • unintended_html_in_doc_comment
+   info • Angle brackets will be interpreted as HTML • lib/shared/game_pack/packs/simple_card_game_rules.dart:67:28 • unintended_html_in_doc_comment
+   info • Angle brackets will be interpreted as HTML • lib/shared/game_pack/packs/simple_card_game_rules.dart:68:27 • unintended_html_in_doc_comment
+   info • Statements in an if should be enclosed in a block • lib/shared/game_pack/packs/simple_card_game_rules.dart:452:60 • curly_braces_in_flow_control_structures
+warning • Unnecessary cast • lib/shared/game_pack/packs/stockpile_rules.dart:1342:18 • unnecessary_cast
+warning • Unnecessary cast • lib/shared/game_pack/packs/stockpile_rules.dart:1388:18 • unnecessary_cast
+warning • Unnecessary cast • lib/shared/game_pack/packs/stockpile_rules.dart:1401:18 • unnecessary_cast
+   info • Statements in a for should be enclosed in a block • lib/shared/game_pack/packs/stockpile_rules.dart:1824:46 • curly_braces_in_flow_control_structures
+   info • Statements in a for should be enclosed in a block • lib/shared/game_pack/packs/stockpile_rules.dart:1825:46 • curly_braces_in_flow_control_structures
+   info • Statements in a for should be enclosed in a block • lib/shared/game_pack/packs/stockpile_rules.dart:1828:49 • curly_braces_in_flow_control_structures
+   info • Statements in a for should be enclosed in a block • lib/shared/game_pack/packs/stockpile_rules.dart:1829:49 • curly_braces_in_flow_control_structures
+   info • Can't use a relative path to import a library in 'lib' • test/client/gameboard_screen_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gameboard_screen_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gameboard_screen_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gameboard_screen_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gamenode_game_over_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gamenode_game_over_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gamenode_game_over_test.dart:6:8 • avoid_relative_lib_imports
+warning • Unused import: 'dart:async' • test/client/gamenode_screen_test.dart:1:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/client/gamenode_screen_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/gamenode_screen_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/hand_widget_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/player_identity_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/qr_code_widget_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/role_select_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/role_select_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/role_select_test.dart:6:8 • avoid_relative_lib_imports
+warning • Unused import: 'dart:async' • test/client/ws_client_test.dart:1:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/client/ws_client_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/ws_client_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/ws_client_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/client/ws_client_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:12:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:13:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:14:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/lobby_integration_test.dart:15:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/poc_server_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:12:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:13:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:14:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/integration/server_integration_test.dart:15:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/demand_rebid_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/demand_rebid_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/demand_rebid_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/demand_rebid_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/demand_rebid_test.dart:7:8 • avoid_relative_lib_imports
+warning • A value for optional parameter 'seed' isn't ever given • test/server/demand_rebid_test.dart:13:36 • unused_element_parameter
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:12:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:13:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:14:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:15:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:16:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/disconnect_handling_test.dart:17:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:12:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:13:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:14:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:15:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/messages/join_room_ack_message.dart' • test/server/force_end_vote_test.dart:15:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/force_end_vote_test.dart:16:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_pack_interface_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_pack_interface_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_pack_interface_test.dart:5:8 • avoid_relative_lib_imports
+   info • The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/foundation.dart' • test/server/game_pack_loader_test.dart:2:8 • unnecessary_import
+   info • Use the null-aware marker '?' rather than a null check via an 'if' • test/server/game_pack_loader_test.dart:100:5 • use_null_aware_elements
+   info • Use the null-aware marker '?' rather than a null check via an 'if' • test/server/game_pack_loader_test.dart:102:5 • use_null_aware_elements
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:8:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_pack/game_pack_interface.dart' • test/server/game_session_pipeline_test.dart:8:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:9:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_pack/game_pack_rules.dart' • test/server/game_session_pipeline_test.dart:9:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:12:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_pack/player_action.dart' • test/server/game_session_pipeline_test.dart:12:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:13:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_session/game_session_state.dart' • test/server/game_session_pipeline_test.dart:13:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:14:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_session/player_session_state.dart' • test/server/game_session_pipeline_test.dart:14:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:15:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_session/session_phase.dart' • test/server/game_session_pipeline_test.dart:15:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:16:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:17:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:18:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_session_pipeline_test.dart:19:8 • avoid_relative_lib_imports
+   info • The local variable '_joinAndStart' starts with an underscore • test/server/game_session_pipeline_test.dart:110:36 • no_leading_underscores_for_local_identifiers
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_state_store_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_state_store_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_state_store_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/game_state_store_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:12:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:13:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:14:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:15:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/lobby_test.dart:16:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:12:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:13:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:14:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:15:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:16:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:17:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:18:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/node_message_test.dart:19:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/processed_actions_cache_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:8:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:11:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:12:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_session/game_session_state.dart' • test/server/reconnect_test.dart:12:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:13:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_session/player_session_state.dart' • test/server/reconnect_test.dart:13:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:14:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_session/session_phase.dart' • test/server/reconnect_test.dart:14:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:15:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:16:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:17:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:18:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/reconnect_test.dart:19:8 • avoid_relative_lib_imports
+   info • Function literals shouldn't be passed to 'forEach' • test/server/secret_hitler_rules_test.dart:47:20 • avoid_function_literals_in_foreach_calls
+   info • Can't use a relative path to import a library in 'lib' • test/server/session_manager_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/session_state_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/session_state_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/session_state_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/session_state_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:8:8 • avoid_relative_lib_imports
+warning • Unused import: '../../lib/shared/game_pack/game_state.dart' • test/server/simple_card_game_rules_test.dart:8:8 • unused_import
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:9:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_rules_test.dart:10:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/simple_card_game_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/stockpile_test.dart:3:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/stockpile_test.dart:4:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/stockpile_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/stockpile_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/stockpile_test.dart:7:8 • avoid_relative_lib_imports
+warning • A value for optional parameter 'seed' isn't ever given • test/server/stockpile_test.dart:14:36 • unused_element_parameter
+warning • A value for optional parameter 'seed' isn't ever given • test/server/stockpile_test.dart:46:36 • unused_element_parameter
+warning • The value of the local variable 'hand' isn't used • test/server/stockpile_test.dart:274:13 • unused_local_variable
+warning • The value of the local variable 'hand' isn't used • test/server/stockpile_test.dart:291:13 • unused_local_variable
+warning • The value of the local variable 'newHand' isn't used • test/server/stockpile_test.dart:304:13 • unused_local_variable
+   info • The local variable '_driveToActionPhase' starts with an underscore • test/server/stockpile_test.dart:415:22 • no_leading_underscores_for_local_identifiers
+   info • Can't use a relative path to import a library in 'lib' • test/server/ws_message_test.dart:5:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/ws_message_test.dart:6:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/ws_message_test.dart:7:8 • avoid_relative_lib_imports
+   info • Can't use a relative path to import a library in 'lib' • test/server/ws_message_test.dart:8:8 • avoid_relative_lib_imports
+
+203 issues found. (ran in 2.1s)

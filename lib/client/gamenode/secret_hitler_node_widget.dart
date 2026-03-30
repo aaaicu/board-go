@@ -778,71 +778,97 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   }) {
     final isLiberal = policy == 'LIBERAL';
     final color = isLiberal ? _kLiberalBlue : _kFascistRed;
-    final lightColor = isLiberal ? _kLiberalLight : _kFascistLight;
-    final policyName = isLiberal ? '자유주의' : '파시스트';
+    // Cream background matching physical cards
+    const cream = Color(0xFFF5E6C8);
+    const creamDark = Color(0xFFE8D5B0);
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         onTap: onTap,
         child: Container(
-          width: 100,
-          height: 150,
+          width: 105,
+          height: 155,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withValues(alpha: 0.3),
-                color.withValues(alpha: 0.15),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color, width: 2),
+            color: cream,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: creamDark, width: 1.5),
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.2),
+                color: color.withValues(alpha: 0.25),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                isLiberal ? Icons.star : Icons.warning_amber,
-                color: lightColor,
-                size: 36,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                policyName,
-                style: TextStyle(
-                  color: lightColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+          child: Container(
+            margin: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: color, width: 2.5),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 6),
+                // Icon: dove or skull
+                Icon(
+                  isLiberal ? Icons.flutter_dash : Icons.dangerous,
+                  color: color,
+                  size: 32,
                 ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 5),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  label,
+                const SizedBox(height: 6),
+                // "LIBERAL" or "FASC1ST"
+                Text(
+                  isLiberal ? 'LIBERAL' : 'FASC1ST',
                   style: TextStyle(
-                    color: lightColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
                   ),
                 ),
-              ),
-            ],
+                // "ARTICLE"
+                Text(
+                  'ARTICLE',
+                  style: TextStyle(
+                    color: color.withValues(alpha: 0.7),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Decorative document lines
+                ...List.generate(3, (i) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  child: Container(
+                    height: 1,
+                    color: color.withValues(alpha: 0.2),
+                  ),
+                )),
+                const Spacer(),
+                // Action label
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+            ),
           ),
         ),
       ),

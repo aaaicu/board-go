@@ -1,0 +1,68 @@
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 93.0.0 (98.0.0 available)
+  analyzer 10.0.1 (12.0.0 available)
+  async 2.13.0 (2.13.1 available)
+  bonsoir 6.0.1 (6.0.2 available)
+  bonsoir_linux 6.0.1 (6.0.2 available)
+  hooks 1.0.1 (1.0.2 available)
+  meta 1.17.0 (1.18.2 available)
+  mobile_scanner 5.2.3 (7.2.0 available)
+  native_toolchain_c 0.17.4 (0.17.6 available)
+  riverpod 2.6.1 (3.2.1 available)
+  shared_preferences 2.5.4 (2.5.5 available)
+  shared_preferences_android 2.4.20 (2.4.23 available)
+  shared_preferences_platform_interface 2.4.1 (2.4.2 available)
+  shelf_web_socket 2.0.1 (3.0.0 available)
+  sqflite_android 2.4.2+2 (2.4.2+3 available)
+  sqlite3 3.1.6 (3.2.0 available)
+  test 1.30.0 (1.31.0 available)
+  test_api 0.7.10 (0.7.11 available)
+  test_core 0.6.16 (0.6.17 available)
+  vector_math 2.2.0 (2.3.0 available)
+  webview_flutter_android 4.10.11 (4.10.15 available)
+  webview_flutter_platform_interface 2.14.0 (2.15.1 available)
+  webview_flutter_wkwebview 3.23.7 (3.24.2 available)
+  win32 5.15.0 (6.0.0 available)
+Got dependencies!
+24 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleRelease'...                        
+lib/client/gamenode/secret_hitler_node_widget.dart:112:33: Error: The getter 'type' isn't defined for the type 'AllowedAction'.
+ - 'AllowedAction' is from 'package:board_go/shared/game_pack/views/allowed_action.dart' ('lib/shared/game_pack/views/allowed_action.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'type'.
+             actionType: action.type,
+                                ^^^^
+lib/client/gamenode/secret_hitler_node_widget.dart:113:28: Error: The getter 'description' isn't defined for the type 'AllowedAction'.
+ - 'AllowedAction' is from 'package:board_go/shared/game_pack/views/allowed_action.dart' ('lib/shared/game_pack/views/allowed_action.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'description'.
+             label: action.description ?? action.type,
+                           ^^^^^^^^^^^
+lib/client/gamenode/secret_hitler_node_widget.dart:113:50: Error: The getter 'type' isn't defined for the type 'AllowedAction'.
+ - 'AllowedAction' is from 'package:board_go/shared/game_pack/views/allowed_action.dart' ('lib/shared/game_pack/views/allowed_action.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'type'.
+             label: action.description ?? action.type,
+                                                 ^^^^
+lib/client/gamenode/secret_hitler_node_widget.dart:114:46: Error: The getter 'type' isn't defined for the type 'AllowedAction'.
+ - 'AllowedAction' is from 'package:board_go/shared/game_pack/views/allowed_action.dart' ('lib/shared/game_pack/views/allowed_action.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'type'.
+             onAction: () => onAction(action.type, {}),
+                                             ^^^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command '/Users/christmas/fvm/versions/stable/bin/flutter'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 6s
+Running Gradle task 'assembleRelease'...                            6.4s
+Gradle task assembleRelease failed with exit code 1
