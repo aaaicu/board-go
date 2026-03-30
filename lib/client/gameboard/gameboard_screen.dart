@@ -170,6 +170,8 @@ class _GameboardScreenState extends State<GameboardScreen> {
         if (!wasInGame) {
           _applyOrientation(
               bv.data['_boardOrientation'] as String? ?? 'landscape');
+          // Hide the server from mDNS discovery while a game is in progress.
+          unawaited(_mdns.unregister());
         }
         // Show a reset dialog when the game finishes.
         if (bv.phase == SessionPhase.finished && !_gameOverDialogShown) {
@@ -196,6 +198,8 @@ class _GameboardScreenState extends State<GameboardScreen> {
       final gameResetSub = handle.gameResetEvents.listen((event) {
         if (!mounted) return;
         _applyOrientation('any'); // Restore free orientation in lobby
+        // Re-advertise server on mDNS so new players can discover it.
+        unawaited(_mdns.register(port: handle.port));
         setState(() {
           _gameStarted = false;
           _boardView = null;
