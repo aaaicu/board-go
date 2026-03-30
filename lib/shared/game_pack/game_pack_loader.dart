@@ -78,8 +78,18 @@ class GamePackLoader {
   Future<List<GamePackManifest>> listAvailablePacks() async {
     final manifests = <GamePackManifest>[];
     for (final packId in _kKnownPackIds) {
-      final manifest = await loadManifest(packId);
-      manifests.add(manifest);
+      try {
+        final manifest = await loadManifest(packId);
+        manifests.add(manifest);
+      } catch (e) {
+        // Skip packs that fail to load — avoids one broken manifest from
+        // blocking the entire game-pack list.
+        assert(() {
+          // ignore: avoid_print
+          print('[GamePackLoader] Failed to load pack "$packId": $e');
+          return true;
+        }());
+      }
     }
     return manifests;
   }
