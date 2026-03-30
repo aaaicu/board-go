@@ -892,11 +892,12 @@ class _GameNodeScreenState extends State<GameNodeScreen>
             ),
           ),
           const SizedBox(width: 4),
-          GestureDetector(
-            onTap: _showNicknameDialog,
-            child: const Icon(Icons.edit,
-                size: 14, color: AppTheme.onSurfaceMuted),
-          ),
+          if (_phase == _NodePhase.lobby)
+            GestureDetector(
+              onTap: _showNicknameDialog,
+              child: const Icon(Icons.edit,
+                  size: 14, color: AppTheme.onSurfaceMuted),
+            ),
           const Spacer(),
           if (_phase != _NodePhase.discovery)
             GestureDetector(

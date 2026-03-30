@@ -404,6 +404,18 @@ class GameServer {
 
     final displayName = join.displayName ?? resolvedPlayerId;
 
+    // Reject new players when a game is already in progress.
+    if (!isReconnect && _sessionState.phase != SessionPhase.lobby) {
+      sink.add(jsonEncode(
+        JoinRoomAckMessage(
+          success: false,
+          errorCode: 'GAME_IN_PROGRESS',
+          errorMessage: '게임이 이미 진행 중입니다.',
+        ).toEnvelope().toJson(),
+      ));
+      return;
+    }
+
     if (isReconnect) {
       // Reattach the new socket to the existing seat.
       _sessions.reconnect(playerId: resolvedPlayerId, newSink: sink);
