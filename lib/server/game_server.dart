@@ -604,21 +604,11 @@ class GameServer {
     }
 
     // ------------------------------------------------------------------
-    // 3. Active-player check
-    // ------------------------------------------------------------------
-    final turnState = _sessionState.turnState;
-    if (turnState == null || turnState.activePlayerId != action.playerId) {
-      _sendActionRejected(
-        sink,
-        clientActionId: clientId,
-        reason: 'Not your turn',
-        code: ActionRejectedCode.notYourTurn,
-      );
-      return;
-    }
-
-    // ------------------------------------------------------------------
-    // 4. Allowed-action check
+    // 3. Allowed-action check
+    //
+    // Replaces a strict active-player gate. Some phases (e.g. ROLE_REVEAL,
+    // VOTING) allow all players to act simultaneously, so we delegate the
+    // "who can act?" decision to the game-pack rules via getAllowedActions.
     // ------------------------------------------------------------------
     final allowed = _gamePackRules.getAllowedActions(
       _sessionState,
