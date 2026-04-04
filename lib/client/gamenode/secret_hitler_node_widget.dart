@@ -13,12 +13,13 @@ const Color _kCardBg = Color(0xFF1E2A45);
 
 const Color _kLiberalBlue = Color(0xFF2196F3);
 const Color _kLiberalLight = Color(0xFF64B5F6);
+const Color _kLiberalDeep = Color(0xFF1B3A6B);
 
 const Color _kFascistRed = Color(0xFFE53935);
 const Color _kFascistLight = Color(0xFFEF5350);
+const Color _kFascistDeep = Color(0xFF6B1F1F);
 
 const Color _kGold = Color(0xFFFFD54F);
-
 
 const Color _kTextLight = Color(0xFFF5F5F5);
 const Color _kTextMuted = Color(0xFFBDBDBD);
@@ -35,21 +36,36 @@ const _phaseLabels = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Message model — represents an actionable game notification
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GameMessage {
+  final String id;
+  final String text;
+  final bool isActionable;
+  final String? actionPhase;
+
+  const _GameMessage({
+    required this.id,
+    required this.text,
+    required this.isActionable,
+    this.actionPhase,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SecretHitlerNodeWidget — Player phone UI
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Full-featured player node UI for the Secret Hitler game pack.
 ///
-/// Renders phase-specific interaction panels:
-/// - ROLE_REVEAL: Role card with party affiliation
-/// - CHANCELLOR_NOMINATION: Target selection for president
-/// - VOTING: Ja/Nein vote cards
-/// - LEGISLATIVE_PRESIDENT: Policy discard selection
-/// - LEGISLATIVE_CHANCELLOR: Policy enact selection + veto
-/// - VETO_RESPONSE: Approve/reject veto
-/// - EXECUTIVE_ACTION: Target selection for executive powers
-/// - Waiting state for non-active players
-class SecretHitlerNodeWidget extends StatelessWidget {
+/// Layout:
+/// - Fixed top bar: message button, policy counters, role/party card buttons
+/// - Center content area: empty by default, shows card overlays or action UIs
+///
+/// Action flow: Messages drive actions. Tapping a message opens the relevant
+/// action UI (nomination, voting, policy selection, etc.) inline.
+class SecretHitlerNodeWidget extends StatefulWidget {
   final PlayerView playerView;
   final void Function(String type, Map<String, dynamic> params) onAction;
 
@@ -59,7 +75,21 @@ class SecretHitlerNodeWidget extends StatelessWidget {
     required this.onAction,
   });
 
-  Map<String, dynamic> get _data => playerView.data;
+  @override
+  State<SecretHitlerNodeWidget> createState() => _SecretHitlerNodeWidgetState();
+}
+
+class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
+  bool _showingRole = false;
+  bool _showingParty = false;
+  bool _showingMessages = false;
+  // When a message is tapped, we store the phase it should render as the
+  // active action UI. null means the default idle center is shown.
+  String? _activeMessageAction;
+
+  // ── Data accessors ────────────────────────────────────────────────────────
+
+  Map<String, dynamic> get _data => widget.playerView.data;
   String get _phase => _data['phase'] as String? ?? '';
   String get _myRole => _data['myRole'] as String? ?? '';
   String get _myParty => _data['myParty'] as String? ?? '';
@@ -81,8 +111,239 @@ class SecretHitlerNodeWidget extends StatelessWidget {
     return info?['nickname'] as String? ?? pid;
   }
 
+  // ── Message generation ────────────────────────────────────────────────────
+
+  /// Derives the current message list from the game phase and player state.
+  /// The most recent actionable message is surfaced first.
+  List<_GameMessage> get _messages {
+    final msgs = <_GameMessage>[];
+
+    if (_winner != null) {
+      final isLiberal = _winner == 'LIBERAL';
+      msgs.add(_GameMessage(
+        id: 'game_over',
+        text: isLiberal ? '자유주의 팀이 승리했습니다!' : '파시스트 팀이 승리했습니다!',
+        isActionable: false,
+      ));
+      return msgs;
+    }
+
+    if (_deadPlayers.contains(widget.playerView.playerId)) {
+      msgs.add(const _GameMessage(
+        id: 'dead',
+        text: '처형되었습니다. 관전 모드로 게임을 지켜보세요.',
+        isActionable: false,
+      ));
+      return msgs;
+    }
+
+    // Phase-specific actionable messages
+    switch (_phase) {
+      case 'ROLE_REVEAL':
+        final isReady = _data['isReady'] as bool? ?? false;
+        msgs.add(_GameMessage(
+          id: 'role_reveal',
+          text: isReady
+              ? '역할 확인이 완료되었습니다. 다른 플레이어를 기다리는 중...'
+              : '당신의 역할을 확인하고 "역할 확인 완료"를 눌러주세요.',
+          isActionable: !isReady,
+          actionPhase: 'ROLE_REVEAL',
+        ));
+
+      case 'CHANCELLOR_NOMINATION':
+        if (_presidentId == widget.playerView.playerId) {
+          msgs.add(const _GameMessage(
+            id: 'nomination',
+            text: '당신이 대통령이 되었습니다. 수상 후보를 지명해주세요.',
+            isActionable: true,
+            actionPhase: 'CHANCELLOR_NOMINATION',
+          ));
+        } else {
+          final presName = _nick(_presidentId ?? '');
+          msgs.add(_GameMessage(
+            id: 'nomination_wait',
+            text: '대통령 $presName이(가) 수상 후보를 지명하고 있습니다.',
+            isActionable: false,
+          ));
+        }
+
+      case 'VOTING':
+        final hasVoted = _data['hasVoted'] as bool? ?? false;
+        final voteResult = _data['voteResult'] as String?;
+        if (voteResult != null) {
+          final passed = voteResult == 'PASSED';
+          final candidateName = _nick(_chancellorCandidateId ?? '');
+          msgs.add(_GameMessage(
+            id: 'vote_result',
+            text: passed
+                ? '투표 가결 — $candidateName이(가) 수상으로 선출되었습니다.'
+                : '투표 부결 — 선거가 실패했습니다.',
+            isActionable: true,
+            actionPhase: 'VOTING',
+          ));
+        } else if (hasVoted) {
+          msgs.add(const _GameMessage(
+            id: 'vote_wait',
+            text: '투표가 완료되었습니다. 다른 플레이어를 기다리는 중...',
+            isActionable: false,
+          ));
+        } else {
+          final candidateName = _nick(_chancellorCandidateId ?? '');
+          final presName = _nick(_presidentId ?? '');
+          msgs.add(_GameMessage(
+            id: 'vote',
+            text: '투표해주세요: $presName 대통령이 $candidateName을(를) 수상으로 지명했습니다.',
+            isActionable: true,
+            actionPhase: 'VOTING',
+          ));
+        }
+
+      case 'LEGISLATIVE_PRESIDENT':
+        if (_presidentId == widget.playerView.playerId) {
+          msgs.add(const _GameMessage(
+            id: 'leg_president',
+            text: '정책 카드 3장 중 1장을 버리세요. 나머지 2장이 수상에게 전달됩니다.',
+            isActionable: true,
+            actionPhase: 'LEGISLATIVE_PRESIDENT',
+          ));
+        } else {
+          msgs.add(const _GameMessage(
+            id: 'leg_president_wait',
+            text: '대통령이 정책 카드를 검토하고 있습니다.',
+            isActionable: false,
+          ));
+        }
+
+      case 'LEGISLATIVE_CHANCELLOR':
+        if (_chancellorId == widget.playerView.playerId) {
+          msgs.add(_GameMessage(
+            id: 'leg_chancellor',
+            text: _vetoUnlocked
+                ? '정책 카드 2장 중 1장을 제정하거나 거부권을 요청하세요.'
+                : '정책 카드 2장 중 1장을 선택하세요.',
+            isActionable: true,
+            actionPhase: 'LEGISLATIVE_CHANCELLOR',
+          ));
+        } else {
+          msgs.add(const _GameMessage(
+            id: 'leg_chancellor_wait',
+            text: '수상이 정책을 제정하고 있습니다.',
+            isActionable: false,
+          ));
+        }
+
+      case 'VETO_RESPONSE':
+        if (_presidentId == widget.playerView.playerId) {
+          msgs.add(const _GameMessage(
+            id: 'veto',
+            text: '수상이 거부권을 요청했습니다. 찬성 또는 반대를 선택해주세요.',
+            isActionable: true,
+            actionPhase: 'VETO_RESPONSE',
+          ));
+        } else {
+          msgs.add(const _GameMessage(
+            id: 'veto_wait',
+            text: '대통령이 거부권 요청을 검토하고 있습니다.',
+            isActionable: false,
+          ));
+        }
+
+      case 'EXECUTIVE_ACTION':
+        if (_presidentId == widget.playerView.playerId) {
+          final execType = _data['executiveActionType'] as String? ?? '';
+          final label = _execActionLabel(execType);
+          msgs.add(_GameMessage(
+            id: 'exec',
+            text: '행정 권한을 행사하세요: $label',
+            isActionable: true,
+            actionPhase: 'EXECUTIVE_ACTION',
+          ));
+        } else {
+          msgs.add(const _GameMessage(
+            id: 'exec_wait',
+            text: '대통령이 행정 권한을 행사하고 있습니다.',
+            isActionable: false,
+          ));
+        }
+    }
+
+    return msgs;
+  }
+
+  String _execActionLabel(String execType) {
+    switch (execType) {
+      case 'POLICY_PEEK':
+        return '정책 엿보기';
+      case 'INVESTIGATE':
+        return '플레이어 조사';
+      case 'SPECIAL_ELECTION':
+        return '특별 선거';
+      case 'EXECUTION':
+        return '처형';
+      default:
+        return execType;
+    }
+  }
+
+  int get _unreadCount =>
+      _messages.where((m) => m.isActionable).length;
+
+  // ── State transitions ─────────────────────────────────────────────────────
+
+  void _onRoleButtonTap() {
+    setState(() {
+      _showingRole = !_showingRole;
+      _showingParty = false;
+      _showingMessages = false;
+      _activeMessageAction = null;
+    });
+  }
+
+  void _onPartyButtonTap() {
+    setState(() {
+      _showingParty = !_showingParty;
+      _showingRole = false;
+      _showingMessages = false;
+      _activeMessageAction = null;
+    });
+  }
+
+  void _onMessageButtonTap() {
+    setState(() {
+      _showingMessages = !_showingMessages;
+      _showingRole = false;
+      _showingParty = false;
+      if (!_showingMessages) _activeMessageAction = null;
+    });
+  }
+
+  void _onMessageTap(_GameMessage message) {
+    if (!message.isActionable || message.actionPhase == null) return;
+    setState(() {
+      _activeMessageAction = message.actionPhase;
+      _showingMessages = false;
+    });
+  }
+
+  void _dismissActionPanel() {
+    setState(() {
+      _activeMessageAction = null;
+    });
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    // ROLE_REVEAL: auto-open the action panel so the player can confirm role.
+    final effectiveAction = _activeMessageAction ??
+        (_phase == 'ROLE_REVEAL' &&
+                !(_data['isReady'] as bool? ?? false) &&
+                !_showingRole &&
+                !_showingParty
+            ? 'ROLE_REVEAL'
+            : null);
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -94,20 +355,584 @@ class SecretHitlerNodeWidget extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // Status bar
-            _buildStatusBar(),
-            // Main content
+            _buildTopBar(),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
+              child: Stack(
+                children: [
+                  // Base content layer
+                  _buildCenterContent(effectiveAction),
+                  // Message panel overlay
+                  if (_showingMessages) _buildMessagePanel(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Top Bar ───────────────────────────────────────────────────────────────
+
+  Widget _buildTopBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kBgDark.withValues(alpha: 0.95),
+        border: Border(
+          bottom: BorderSide(color: _kGold.withValues(alpha: 0.15)),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Left: message button with badge
+          _buildMessageButton(),
+          const SizedBox(width: 12),
+          // Center: policy counters
+          Expanded(child: _buildPolicyCounters()),
+          const SizedBox(width: 12),
+          // Right: role + party card buttons
+          _buildCardButtons(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageButton() {
+    final count = _unreadCount;
+    return GestureDetector(
+      onTap: _onMessageButtonTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: _showingMessages
+              ? _kGold.withValues(alpha: 0.2)
+              : _kCardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _showingMessages
+                ? _kGold.withValues(alpha: 0.6)
+                : _kGold.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Center(
+              child: Icon(Icons.mail_outline, color: _kGold, size: 22),
+            ),
+            if (count > 0)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: const BoxDecoration(
+                    color: _kFascistRed,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: _kTextLight,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPolicyCounters() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildPolicyCounter(
+          label: '리버럴',
+          current: _liberalPolicies,
+          total: 5,
+          color: _kLiberalBlue,
+        ),
+        const SizedBox(width: 8),
+        _buildPolicyCounter(
+          label: '파시스트',
+          current: _fascistPolicies,
+          total: 6,
+          color: _kFascistRed,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPolicyCounter({
+    required String label,
+    required int current,
+    required int total,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$label $current/$total',
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardButtons() {
+    return Row(
+      children: [
+        _buildTopBarCardButton(
+          label: '역할',
+          isActive: _showingRole,
+          color: _myParty == 'LIBERAL' ? _kLiberalBlue : _kFascistRed,
+          onTap: _onRoleButtonTap,
+        ),
+        const SizedBox(width: 6),
+        _buildTopBarCardButton(
+          label: '당적',
+          isActive: _showingParty,
+          color: _myParty == 'LIBERAL' ? _kLiberalBlue : _kFascistRed,
+          onTap: _onPartyButtonTap,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopBarCardButton({
+    required String label,
+    required bool isActive,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? color.withValues(alpha: 0.2) : _kCardBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isActive
+                ? color.withValues(alpha: 0.6)
+                : color.withValues(alpha: 0.2),
+            width: isActive ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? color : color.withValues(alpha: 0.7),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Center Content ────────────────────────────────────────────────────────
+
+  Widget _buildCenterContent(String? activeAction) {
+    if (_showingRole) return _buildRoleCardOverlay();
+    if (_showingParty) return _buildPartyCardOverlay();
+
+    if (activeAction != null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            _buildActionContent(activeAction),
+            const SizedBox(height: 24),
+          ],
+        ),
+      );
+    }
+
+    // Idle state
+    return _buildIdleCenter();
+  }
+
+  Widget _buildIdleCenter() {
+    final phaseLabel = _phaseLabels[_phase] ?? _phase;
+    final myRole = _myRole;
+    final isPresident = _presidentId == widget.playerView.playerId;
+    final isChancellor = _chancellorId == widget.playerView.playerId;
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Phase chip
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+            decoration: BoxDecoration(
+              color: _kGold.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _kGold.withValues(alpha: 0.25)),
+            ),
+            child: Text(
+              phaseLabel,
+              style: const TextStyle(
+                color: _kGold,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Role indicator
+          if (myRole.isNotEmpty) ...[
+            _buildCompactRoleIndicator(),
+            const SizedBox(height: 16),
+          ],
+          // Government position badge
+          if (isPresident || isChancellor)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: _kGold.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _kGold.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.account_balance, color: _kGold, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    isPresident ? '현재 대통령' : '현재 수상',
+                    style: const TextStyle(
+                      color: _kGold,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 28),
+          // Hint to open messages
+          if (_unreadCount > 0)
+            GestureDetector(
+              onTap: _onMessageButtonTap,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _kFascistRed.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: _kFascistRed.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    const Icon(Icons.mail, color: _kFascistRed, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      '행동이 필요합니다 ($_unreadCount)',
+                      style: const TextStyle(
+                        color: _kFascistRed,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            const Text(
+              '다른 플레이어를 기다리는 중...',
+              style: TextStyle(
+                color: _kTextMuted,
+                fontSize: 14,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactRoleIndicator() {
+    final isLiberal = _myParty == 'LIBERAL';
+    final color = isLiberal ? _kLiberalBlue : _kFascistRed;
+    final lightColor = isLiberal ? _kLiberalLight : _kFascistLight;
+    final roleLabel = _myRole == 'LIBERAL'
+        ? '자유주의자'
+        : _myRole == 'HITLER'
+            ? '히틀러'
+            : '파시스트';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _myRole == 'HITLER'
+                ? Icons.sentiment_very_dissatisfied
+                : isLiberal
+                    ? Icons.flutter_dash
+                    : Icons.dangerous,
+            color: lightColor,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            roleLabel,
+            style: TextStyle(
+              color: lightColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Card Overlays ─────────────────────────────────────────────────────────
+
+  Widget _buildPartyCardOverlay() {
+    final isLiberal = _myParty == 'LIBERAL';
+    return GestureDetector(
+      onTap: _onPartyButtonTap,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.4),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildCanvasCard(isLiberal: isLiberal, isRole: false),
+              const SizedBox(height: 16),
+              Text(
+                '탭하여 닫기',
+                style: TextStyle(
+                  color: _kTextMuted.withValues(alpha: 0.6),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoleCardOverlay() {
+    final isLiberal = _myParty == 'LIBERAL';
+    return GestureDetector(
+      onTap: _onRoleButtonTap,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.4),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildCanvasCard(isLiberal: isLiberal, isRole: true),
+              const SizedBox(height: 8),
+              if (_myRole == 'FASCIST' ||
+                  (_myRole == 'HITLER' &&
+                      (_data['totalPlayers'] as int? ?? 0) <= 6))
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: _buildAlliesInfo(),
+                ),
+              const SizedBox(height: 12),
+              Text(
+                '탭하여 닫기',
+                style: TextStyle(
+                  color: _kTextMuted.withValues(alpha: 0.6),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Renders the physical-card-style party/role card using Canvas.
+  Widget _buildCanvasCard({required bool isLiberal, required bool isRole}) {
+    String title;
+    String subtitle;
+    Color bgColor;
+    Color accentColor;
+
+    if (isRole) {
+      switch (_myRole) {
+        case 'LIBERAL':
+          title = '리버럴';
+          subtitle = '역할 카드';
+          bgColor = _kLiberalDeep;
+          accentColor = _kLiberalLight;
+        case 'FASCIST':
+          title = '파시스트';
+          subtitle = '역할 카드';
+          bgColor = _kFascistDeep;
+          accentColor = _kFascistLight;
+        case 'HITLER':
+          title = '히틀러';
+          subtitle = '역할 카드';
+          bgColor = const Color(0xFF1A0000);
+          accentColor = _kFascistLight;
+        default:
+          title = '???';
+          subtitle = '역할 카드';
+          bgColor = _kCardBg;
+          accentColor = _kTextMuted;
+      }
+    } else {
+      // Party card
+      title = isLiberal ? '리버럴' : '파시스트';
+      subtitle = '정당 카드';
+      bgColor = isLiberal ? _kLiberalDeep : _kFascistDeep;
+      accentColor = isLiberal ? _kLiberalLight : _kFascistLight;
+    }
+
+    // Card proportions: 2:3 ratio
+    const double cardWidth = 200;
+    const double cardHeight = 300;
+
+    return SizedBox(
+      width: cardWidth,
+      height: cardHeight,
+      child: CustomPaint(
+        painter: _CardPainter(
+          bgColor: bgColor,
+          accentColor: accentColor,
+          title: title,
+          subtitle: subtitle,
+          isLiberal: isRole ? _myRole == 'LIBERAL' : isLiberal,
+        ),
+      ),
+    );
+  }
+
+  // ── Message Panel ─────────────────────────────────────────────────────────
+
+  Widget _buildMessagePanel() {
+    final msgs = _messages;
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: () {
+          // Tapping the backdrop (not the panel) closes it
+        },
+        child: Stack(
+          children: [
+            // Semi-transparent backdrop
+            Container(color: Colors.black.withValues(alpha: 0.5)),
+            // Slide-up panel from bottom
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 480),
+                decoration: BoxDecoration(
+                  color: _kBgDark,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(24)),
+                  border: Border.all(
+                    color: _kGold.withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Handle + header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: _kTextMuted.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Icon(Icons.mail_outline,
+                                  color: _kGold, size: 18),
+                              const SizedBox(width: 8),
+                              const Text(
+                                '메시지',
+                                style: TextStyle(
+                                  color: _kGold,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const Spacer(),
+                              GestureDetector(
+                                onTap: _onMessageButtonTap,
+                                child: const Icon(Icons.close,
+                                    color: _kTextMuted, size: 20),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Divider(
+                              color: _kGold.withValues(alpha: 0.1), height: 1),
+                        ],
+                      ),
+                    ),
+                    // Message list
+                    Flexible(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        shrinkWrap: true,
+                        itemCount: msgs.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (_, i) =>
+                            _buildMessageTile(msgs[i]),
+                      ),
+                    ),
                     const SizedBox(height: 8),
-                    _buildPhaseContent(),
-                    const SizedBox(height: 16),
-                    // Role summary footer
-                    _buildRoleSummary(),
-                    const SizedBox(height: 16),
                   ],
                 ),
               ),
@@ -118,75 +943,95 @@ class SecretHitlerNodeWidget extends StatelessWidget {
     );
   }
 
-  // ── Status Bar ────────────────────────────────────────────────────────────
-
-  Widget _buildStatusBar() {
-    final phaseLabel = _phaseLabels[_phase] ?? _phase;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: _kBgDark.withValues(alpha: 0.8),
-        border: Border(
-          bottom: BorderSide(
-            color: _kGold.withValues(alpha: 0.15),
+  Widget _buildMessageTile(_GameMessage msg) {
+    final color = msg.isActionable ? _kGold : _kTextMuted;
+    return GestureDetector(
+      onTap: () => _onMessageTap(msg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: msg.isActionable
+              ? _kGold.withValues(alpha: 0.07)
+              : _kCardBg.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: msg.isActionable
+                ? _kGold.withValues(alpha: 0.3)
+                : Colors.transparent,
           ),
         ),
-      ),
-      child: Row(
-        children: [
-          // Policy counters
-          _buildPolicyBadge(_liberalPolicies, 5, _kLiberalBlue),
-          const SizedBox(width: 8),
-          _buildPolicyBadge(_fascistPolicies, 6, _kFascistRed),
-          const Spacer(),
-          // Phase chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: _kGold.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border:
-                  Border.all(color: _kGold.withValues(alpha: 0.3)),
+        child: Row(
+          children: [
+            Icon(
+              msg.isActionable ? Icons.touch_app : Icons.info_outline,
+              color: color,
+              size: 18,
             ),
-            child: Text(
-              phaseLabel,
-              style: const TextStyle(
-                color: _kGold,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                msg.text,
+                style: TextStyle(
+                  color: msg.isActionable ? _kTextLight : _kTextMuted,
+                  fontSize: 14,
+                  height: 1.45,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPolicyBadge(int current, int total, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        '$current / $total',
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+            if (msg.isActionable)
+              const Icon(Icons.arrow_forward_ios,
+                  color: _kGold, size: 13),
+          ],
         ),
       ),
     );
   }
 
-  // ── Phase Content Router ──────────────────────────────────────────────────
+  // ── Action Content Router ─────────────────────────────────────────────────
 
-  Widget _buildPhaseContent() {
+  Widget _buildActionContent(String phase) {
+    // Dismiss button strip at top
+    return Column(
+      children: [
+        // "Back" strip
+        GestureDetector(
+          onTap: _dismissActionPanel,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: _kCardBg.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.arrow_back_ios,
+                    color: _kTextMuted, size: 13),
+                const SizedBox(width: 4),
+                Text(
+                  '메시지로 돌아가기',
+                  style: TextStyle(
+                    color: _kTextMuted.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildPhaseActionWidget(phase),
+      ],
+    );
+  }
+
+  Widget _buildPhaseActionWidget(String phase) {
     if (_winner != null) return _buildGameOver();
-    if (_deadPlayers.contains(playerView.playerId)) return _buildDead();
+    if (_deadPlayers.contains(widget.playerView.playerId)) {
+      return _buildDead();
+    }
 
-    switch (_phase) {
+    switch (phase) {
       case 'ROLE_REVEAL':
         return _buildRoleReveal();
       case 'CHANCELLOR_NOMINATION':
@@ -219,13 +1064,13 @@ class SecretHitlerNodeWidget extends StatelessWidget {
         const SizedBox(height: 12),
         _buildRoleCard(expanded: true),
         const SizedBox(height: 12),
-        // Fascist allies info
-        if (_myRole == 'FASCIST' || (_myRole == 'HITLER' && totalPlayers <= 6))
+        if (_myRole == 'FASCIST' ||
+            (_myRole == 'HITLER' && totalPlayers <= 6))
           _buildAlliesInfo(),
         const SizedBox(height: 16),
-        // Ready status
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: _kCardBg,
             borderRadius: BorderRadius.circular(14),
@@ -254,15 +1099,14 @@ class SecretHitlerNodeWidget extends StatelessWidget {
             label: '역할 확인 완료',
             color: _kGold,
             icon: Icons.check,
-            onTap: () => onAction('READY', {}),
+            onTap: () => widget.onAction('READY', {}),
           ),
       ],
     );
   }
 
   Widget _buildAlliesInfo() {
-    final allies =
-        List<String>.from(_data['fascistAllies'] ?? []);
+    final allies = List<String>.from(_data['fascistAllies'] ?? []);
     final hitlerId = _data['hitlerId'] as String? ?? '';
 
     return Container(
@@ -271,9 +1115,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
       decoration: BoxDecoration(
         color: _kFascistRed.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _kFascistRed.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: _kFascistRed.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,14 +1177,14 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   // ── CHANCELLOR_NOMINATION ─────────────────────────────────────────────────
 
   Widget _buildNomination() {
-    if (_presidentId != playerView.playerId) {
+    if (_presidentId != widget.playerView.playerId) {
       final presidentName = _nick(_presidentId ?? '');
-      return _buildWaiting('대통령 $presidentName이(가)\n수상 후보를 지명하고 있습니다...');
+      return _buildWaiting(
+          '대통령 $presidentName이(가)\n수상 후보를 지명하고 있습니다...');
     }
 
-    // President UI: select chancellor
     final targets = <_TargetOption>[];
-    for (final action in playerView.allowedActions) {
+    for (final action in widget.playerView.allowedActions) {
       if (action.actionType == 'NOMINATE') {
         final targetId = action.params['targetId'] as String;
         targets.add(_TargetOption(
@@ -375,15 +1217,14 @@ class SecretHitlerNodeWidget extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () => onAction(target.actionType, target.params),
+          onTap: () => widget.onAction(target.actionType, target.params),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: _kCardBg,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: _kGold.withValues(alpha: 0.2),
-              ),
+              border: Border.all(color: _kGold.withValues(alpha: 0.2)),
             ),
             child: Row(
               children: [
@@ -440,7 +1281,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
     final candidateName = _nick(candidateId);
     final presidentName = _nick(_presidentId ?? '');
 
-    // Vote result display
     final voteResult = _data['voteResult'] as String?;
     if (voteResult != null) {
       final isPassed = voteResult == 'PASSED';
@@ -451,15 +1291,12 @@ class SecretHitlerNodeWidget extends StatelessWidget {
       children: [
         _buildSectionTitle('투표'),
         const SizedBox(height: 8),
-        // Candidate info card
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: _kCardBg,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _kGold.withValues(alpha: 0.2),
-            ),
+            border: Border.all(color: _kGold.withValues(alpha: 0.2)),
           ),
           child: Column(
             children: [
@@ -484,7 +1321,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-
         if (hasVoted) ...[
           Container(
             padding: const EdgeInsets.all(16),
@@ -507,22 +1343,18 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '다른 플레이어 대기 중... ($currentCount/$totalVoters)',
-                  style: const TextStyle(
-                    color: _kTextMuted,
-                    fontSize: 13,
-                  ),
+                  style:
+                      const TextStyle(color: _kTextMuted, fontSize: 13),
                 ),
               ],
             ),
           ),
         ] else ...[
-          // Vote progress
           Text(
             '투표 진행: $currentCount / $totalVoters',
             style: const TextStyle(color: _kTextMuted, fontSize: 12),
           ),
           const SizedBox(height: 16),
-          // Vote buttons
           Row(
             children: [
               Expanded(
@@ -531,7 +1363,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                   subtitle: '찬성',
                   color: _kLiberalBlue,
                   icon: Icons.thumb_up_outlined,
-                  onTap: () => onAction('VOTE_JA', {}),
+                  onTap: () => widget.onAction('VOTE_JA', {}),
                 ),
               ),
               const SizedBox(width: 12),
@@ -541,7 +1373,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                   subtitle: '반대',
                   color: _kFascistRed,
                   icon: Icons.thumb_down_outlined,
-                  onTap: () => onAction('VOTE_NEIN', {}),
+                  onTap: () => widget.onAction('VOTE_NEIN', {}),
                 ),
               ),
             ],
@@ -568,7 +1400,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
+            border:
+                Border.all(color: color.withValues(alpha: 0.5), width: 2),
           ),
           child: Column(
             children: [
@@ -602,8 +1435,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
       bool isPassed, String presidentName, String candidateName) {
     final color = isPassed ? _kLiberalBlue : _kFascistRed;
     final text = isPassed ? '가결 — 수상 선출!' : '부결 — 선거 실패';
-
-    // Completed votes display
     final completedVotes =
         Map<String, String>.from(_data['completedVotes'] ?? {});
 
@@ -638,7 +1469,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        // Individual vote display
         if (completedVotes.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(12),
@@ -693,12 +1523,11 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   // ── LEGISLATIVE_PRESIDENT ─────────────────────────────────────────────────
 
   Widget _buildLegislativePresident() {
-    if (_presidentId != playerView.playerId) {
+    if (_presidentId != widget.playerView.playerId) {
       return _buildWaiting('대통령이 정책 카드를 검토하고 있습니다...');
     }
 
-    final policies =
-        List<String>.from(_data['drawnPolicies'] ?? []);
+    final policies = List<String>.from(_data['drawnPolicies'] ?? []);
 
     return Column(
       children: [
@@ -718,7 +1547,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                 policy: policies[i],
                 label: '버리기',
                 onTap: () =>
-                    onAction('DISCARD_POLICY', {'discardIndex': i}),
+                    widget.onAction('DISCARD_POLICY', {'discardIndex': i}),
               ),
           ],
         ),
@@ -729,12 +1558,11 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   // ── LEGISLATIVE_CHANCELLOR ────────────────────────────────────────────────
 
   Widget _buildLegislativeChancellor() {
-    if (_chancellorId != playerView.playerId) {
+    if (_chancellorId != widget.playerView.playerId) {
       return _buildWaiting('수상이 정책을 제정하고 있습니다...');
     }
 
-    final policies =
-        List<String>.from(_data['drawnPolicies'] ?? []);
+    final policies = List<String>.from(_data['drawnPolicies'] ?? []);
 
     return Column(
       children: [
@@ -754,7 +1582,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                 policy: policies[i],
                 label: '제정',
                 onTap: () =>
-                    onAction('ENACT_POLICY', {'enactIndex': i}),
+                    widget.onAction('ENACT_POLICY', {'enactIndex': i}),
               ),
           ],
         ),
@@ -764,7 +1592,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
             label: '거부권 요청 (VETO)',
             color: _kFascistRed,
             icon: Icons.block,
-            onTap: () => onAction('REQUEST_VETO', {}),
+            onTap: () => widget.onAction('REQUEST_VETO', {}),
           ),
         ],
       ],
@@ -778,7 +1606,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   }) {
     final isLiberal = policy == 'LIBERAL';
     final color = isLiberal ? _kLiberalBlue : _kFascistRed;
-    // Cream background matching physical cards
     const cream = Color(0xFFF5E6C8);
     const creamDark = Color(0xFFE8D5B0);
 
@@ -812,14 +1639,12 @@ class SecretHitlerNodeWidget extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const SizedBox(height: 6),
-                // Icon: dove or skull
                 Icon(
                   isLiberal ? Icons.flutter_dash : Icons.dangerous,
                   color: color,
                   size: 32,
                 ),
                 const SizedBox(height: 6),
-                // "LIBERAL" or "FASC1ST"
                 Text(
                   isLiberal ? 'LIBERAL' : 'FASC1ST',
                   style: TextStyle(
@@ -829,7 +1654,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                     letterSpacing: 1.5,
                   ),
                 ),
-                // "ARTICLE"
                 Text(
                   'ARTICLE',
                   style: TextStyle(
@@ -840,16 +1664,17 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // Decorative document lines
-                ...List.generate(3, (i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                  child: Container(
-                    height: 1,
-                    color: color.withValues(alpha: 0.2),
+                ...List.generate(
+                  3,
+                  (i) => Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 2),
+                    child: Container(
+                        height: 1,
+                        color: color.withValues(alpha: 0.2)),
                   ),
-                )),
+                ),
                 const Spacer(),
-                // Action label
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 5),
@@ -878,7 +1703,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   // ── VETO_RESPONSE ─────────────────────────────────────────────────────────
 
   Widget _buildVetoResponse() {
-    if (_presidentId != playerView.playerId) {
+    if (_presidentId != widget.playerView.playerId) {
       return _buildWaiting('대통령이 거부권 요청을 검토하고 있습니다...');
     }
 
@@ -891,9 +1716,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           decoration: BoxDecoration(
             color: _kFascistRed.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _kFascistRed.withValues(alpha: 0.3),
-            ),
+            border:
+                Border.all(color: _kFascistRed.withValues(alpha: 0.3)),
           ),
           child: const Column(
             children: [
@@ -925,7 +1749,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                 label: '거부권 찬성',
                 color: _kFascistRed,
                 icon: Icons.check,
-                onTap: () => onAction('VETO_APPROVE', {}),
+                onTap: () => widget.onAction('VETO_APPROVE', {}),
               ),
             ),
             const SizedBox(width: 12),
@@ -934,7 +1758,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                 label: '거부권 반대',
                 color: _kLiberalBlue,
                 icon: Icons.close,
-                onTap: () => onAction('VETO_REJECT', {}),
+                onTap: () => widget.onAction('VETO_REJECT', {}),
               ),
             ),
           ],
@@ -946,7 +1770,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
   // ── EXECUTIVE_ACTION ──────────────────────────────────────────────────────
 
   Widget _buildExecutiveAction() {
-    if (_presidentId != playerView.playerId) {
+    if (_presidentId != widget.playerView.playerId) {
       return _buildWaiting('대통령이 행정 권한을 행사하고 있습니다...');
     }
 
@@ -973,9 +1797,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
         description = '';
     }
 
-
     final targets = <_TargetOption>[];
-    for (final action in playerView.allowedActions) {
+    for (final action in widget.playerView.allowedActions) {
       if (action.params.containsKey('targetId')) {
         final targetId = action.params['targetId'] as String;
         targets.add(_TargetOption(
@@ -998,15 +1821,14 @@ class SecretHitlerNodeWidget extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         ...targets.map((t) => _buildPlayerSelectCard(t)),
-        // Show investigation results if any
         if (execType == 'INVESTIGATE') _buildInvestigationResults(),
       ],
     );
   }
 
   Widget _buildInvestigationResults() {
-    final results = Map<String, dynamic>.from(
-        _data['investigationResults'] ?? {});
+    final results =
+        Map<String, dynamic>.from(_data['investigationResults'] ?? {});
     if (results.isEmpty) return const SizedBox.shrink();
 
     return Container(
@@ -1125,7 +1947,7 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           label: '확인 완료',
           color: _kGold,
           icon: Icons.check,
-          onTap: () => onAction('EXEC_FINISH_PEEK', {}),
+          onTap: () => widget.onAction('EXEC_FINISH_PEEK', {}),
         ),
       ],
     );
@@ -1140,14 +1962,15 @@ class SecretHitlerNodeWidget extends StatelessWidget {
     final myTeamWon = (isLiberal && _myParty == 'LIBERAL') ||
         (!isLiberal && _myParty == 'FASCIST');
 
-    final allRoles =
-        Map<String, String>.from(_data['allRoles'] ?? {});
+    final allRoles = Map<String, String>.from(_data['allRoles'] ?? {});
 
     return Column(
       children: [
         const SizedBox(height: 16),
         Icon(
-          myTeamWon ? Icons.celebration : Icons.sentiment_very_dissatisfied,
+          myTeamWon
+              ? Icons.celebration
+              : Icons.sentiment_very_dissatisfied,
           color: winColor,
           size: 48,
         ),
@@ -1167,7 +1990,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           style: const TextStyle(color: _kTextMuted, fontSize: 14),
         ),
         const SizedBox(height: 24),
-        // All roles reveal
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1187,9 +2009,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               ...allRoles.entries.map((e) {
-                final roleColor = e.value == 'LIBERAL'
-                    ? _kLiberalBlue
-                    : _kFascistRed;
+                final roleColor =
+                    e.value == 'LIBERAL' ? _kLiberalBlue : _kFascistRed;
                 final roleLabel = e.value == 'LIBERAL'
                     ? '자유주의'
                     : e.value == 'HITLER'
@@ -1265,7 +2086,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
         const Text(
           '더 이상 게임에 참여할 수 없습니다.\n관전 모드로 게임을 지켜보세요.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: _kTextMuted, fontSize: 14, height: 1.5),
+          style: TextStyle(
+              color: _kTextMuted, fontSize: 14, height: 1.5),
         ),
       ],
     );
@@ -1282,9 +2104,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
           decoration: BoxDecoration(
             color: _kCardBg,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: _kGold.withValues(alpha: 0.1),
-            ),
+            border:
+                Border.all(color: _kGold.withValues(alpha: 0.1)),
           ),
           child: Column(
             children: [
@@ -1293,8 +2114,8 @@ class SecretHitlerNodeWidget extends StatelessWidget {
                 height: 40,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  valueColor:
-                      AlwaysStoppedAnimation(_kGold.withValues(alpha: 0.5)),
+                  valueColor: AlwaysStoppedAnimation(
+                      _kGold.withValues(alpha: 0.5)),
                 ),
               ),
               const SizedBox(height: 20),
@@ -1412,80 +2233,6 @@ class SecretHitlerNodeWidget extends StatelessWidget {
     }
   }
 
-  // ── Role Summary (footer) ─────────────────────────────────────────────────
-
-  Widget _buildRoleSummary() {
-    if (_phase == 'ROLE_REVEAL') return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: _kCardBg.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _myRole == 'HITLER'
-                ? Icons.sentiment_very_dissatisfied
-                : _myParty == 'LIBERAL'
-                    ? Icons.star
-                    : Icons.warning_amber,
-            color: _myParty == 'LIBERAL' ? _kLiberalBlue : _kFascistRed,
-            size: 20,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            _myRole == 'LIBERAL'
-                ? '자유주의자'
-                : _myRole == 'HITLER'
-                    ? '히틀러'
-                    : '파시스트',
-            style: TextStyle(
-              color:
-                  _myParty == 'LIBERAL' ? _kLiberalLight : _kFascistLight,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const Spacer(),
-          if (_presidentId == playerView.playerId)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: _kGold.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                '대통령',
-                style: TextStyle(
-                  color: _kGold,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            )
-          else if (_chancellorId == playerView.playerId)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: _kLiberalBlue.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                '수상',
-                style: TextStyle(
-                  color: _kLiberalBlue,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   // ── Shared Widgets ────────────────────────────────────────────────────────
 
   Widget _buildSectionTitle(String title) {
@@ -1538,6 +2285,269 @@ class SecretHitlerNodeWidget extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canvas card painter — physical-card-style rendering
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CardPainter extends CustomPainter {
+  final Color bgColor;
+  final Color accentColor;
+  final String title;
+  final String subtitle;
+  final bool isLiberal;
+
+  const _CardPainter({
+    required this.bgColor,
+    required this.accentColor,
+    required this.title,
+    required this.subtitle,
+    required this.isLiberal,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, w, h),
+      const Radius.circular(16),
+    );
+
+    // Background
+    final bgPaint = Paint()..color = bgColor;
+    canvas.drawRRect(rrect, bgPaint);
+
+    // Outer border
+    final borderPaint = Paint()
+      ..color = accentColor.withValues(alpha: 0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawRRect(rrect, borderPaint);
+
+    // Inner decorative frame — inset by 10px on each side
+    const inset = 10.0;
+    final innerRect = Rect.fromLTWH(inset, inset, w - inset * 2, h - inset * 2);
+    final innerRRect = RRect.fromRectAndRadius(
+      innerRect,
+      const Radius.circular(10),
+    );
+    final innerBorderPaint = Paint()
+      ..color = accentColor.withValues(alpha: 0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRRect(innerRRect, innerBorderPaint);
+
+    // Corner decorative dots
+    _drawCornerDot(canvas, inset + 6, inset + 6);
+    _drawCornerDot(canvas, w - inset - 6, inset + 6);
+    _drawCornerDot(canvas, inset + 6, h - inset - 6);
+    _drawCornerDot(canvas, w - inset - 6, h - inset - 6);
+
+    // Emblem area — centered vertically in upper 55% of card
+    _drawEmblem(canvas, Offset(w / 2, h * 0.22));
+
+    // Title text
+    final titlePainter = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: TextStyle(
+          color: accentColor,
+          fontSize: 26,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout(maxWidth: w - inset * 4);
+    titlePainter.paint(
+      canvas,
+      Offset((w - titlePainter.width) / 2, h * 0.5),
+    );
+
+    // Horizontal divider below title
+    final dividerPaint = Paint()
+      ..color = accentColor.withValues(alpha: 0.25)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(w * 0.2, h * 0.63),
+      Offset(w * 0.8, h * 0.63),
+      dividerPaint,
+    );
+
+    // Subtitle text
+    final subtitlePainter = TextPainter(
+      text: TextSpan(
+        text: subtitle,
+        style: TextStyle(
+          color: accentColor.withValues(alpha: 0.6),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout(maxWidth: w - inset * 4);
+    subtitlePainter.paint(
+      canvas,
+      Offset((w - subtitlePainter.width) / 2, h * 0.67),
+    );
+
+    // Decorative lines near bottom
+    for (int i = 0; i < 3; i++) {
+      final lineY = h * 0.78 + i * 7.0;
+      canvas.drawLine(
+        Offset(w * 0.25, lineY),
+        Offset(w * 0.75, lineY),
+        Paint()
+          ..color = accentColor.withValues(alpha: 0.12)
+          ..strokeWidth = 1,
+      );
+    }
+  }
+
+  void _drawCornerDot(Canvas canvas, double x, double y) {
+    canvas.drawCircle(
+      Offset(x, y),
+      2.5,
+      Paint()..color = accentColor.withValues(alpha: 0.4),
+    );
+  }
+
+  void _drawEmblem(Canvas canvas, Offset center) {
+    if (isLiberal) {
+      _drawDoveEmblem(canvas, center);
+    } else {
+      _drawSkullEmblem(canvas, center);
+    }
+  }
+
+  /// Dove emblem for liberal party — simplified geometric representation.
+  void _drawDoveEmblem(Canvas canvas, Offset center) {
+    final paint = Paint()
+      ..color = accentColor.withValues(alpha: 0.85)
+      ..style = PaintingStyle.fill;
+
+    // Body ellipse
+    canvas.drawOval(
+      Rect.fromCenter(center: center, width: 28, height: 18),
+      paint,
+    );
+
+    // Head circle
+    canvas.drawCircle(
+      Offset(center.dx + 16, center.dy - 6),
+      7,
+      paint,
+    );
+
+    // Wing — arc path
+    final wingPath = Path()
+      ..moveTo(center.dx - 14, center.dy - 2)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy - 22,
+        center.dx + 10,
+        center.dy - 4,
+      )
+      ..close();
+    canvas.drawPath(wingPath, paint);
+
+    // Tail
+    final tailPath = Path()
+      ..moveTo(center.dx - 14, center.dy + 2)
+      ..lineTo(center.dx - 26, center.dy + 8)
+      ..lineTo(center.dx - 14, center.dy + 8)
+      ..close();
+    canvas.drawPath(tailPath, paint);
+
+    // Eye dot (white)
+    canvas.drawCircle(
+      Offset(center.dx + 18, center.dy - 7),
+      2,
+      Paint()..color = bgColor,
+    );
+  }
+
+  /// Skull emblem for fascist party — simplified geometric skull.
+  void _drawSkullEmblem(Canvas canvas, Offset center) {
+    final paint = Paint()
+      ..color = accentColor.withValues(alpha: 0.85)
+      ..style = PaintingStyle.fill;
+
+    // Cranium — rounded square
+    final craniumRect = Rect.fromCenter(
+      center: Offset(center.dx, center.dy - 4),
+      width: 30,
+      height: 26,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(craniumRect, const Radius.circular(8)),
+      paint,
+    );
+
+    // Jaw — smaller rectangle
+    final jawRect = Rect.fromCenter(
+      center: Offset(center.dx, center.dy + 12),
+      width: 22,
+      height: 10,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(jawRect, const Radius.circular(3)),
+      paint,
+    );
+
+    // Eye sockets (cutouts using bg color)
+    final eyePaint = Paint()..color = bgColor;
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(center.dx - 7, center.dy - 5),
+        width: 9,
+        height: 9,
+      ),
+      eyePaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(center.dx + 7, center.dy - 5),
+        width: 9,
+        height: 9,
+      ),
+      eyePaint,
+    );
+
+    // Nose (small triangle cutout)
+    final nosePath = Path()
+      ..moveTo(center.dx, center.dy + 3)
+      ..lineTo(center.dx - 3, center.dy + 8)
+      ..lineTo(center.dx + 3, center.dy + 8)
+      ..close();
+    canvas.drawPath(nosePath, Paint()..color = bgColor);
+
+    // Teeth lines on jaw
+    final toothPaint = Paint()
+      ..color = bgColor
+      ..strokeWidth = 2;
+    for (int i = 0; i < 3; i++) {
+      final x = center.dx - 7 + i * 7.0;
+      canvas.drawLine(
+        Offset(x, center.dy + 8),
+        Offset(x, center.dy + 15),
+        toothPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CardPainter oldDelegate) =>
+      oldDelegate.bgColor != bgColor ||
+      oldDelegate.accentColor != accentColor ||
+      oldDelegate.title != title ||
+      oldDelegate.subtitle != subtitle ||
+      oldDelegate.isLiberal != isLiberal;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
