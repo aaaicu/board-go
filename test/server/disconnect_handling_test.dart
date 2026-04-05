@@ -10,6 +10,7 @@ import '../../lib/server/session_manager.dart';
 import '../../lib/server/server_isolate.dart';
 import '../../lib/shared/game_pack/game_pack_interface.dart';
 import '../../lib/shared/game_pack/game_state.dart';
+import '../../lib/shared/game_pack/packs/simple_card_game_rules.dart';
 import '../../lib/shared/game_pack/player_action.dart';
 import '../../lib/shared/messages/join_message.dart';
 import '../../lib/shared/messages/join_room_ack_message.dart';
@@ -334,6 +335,9 @@ group('Tests 2-4: auto-skip timer and reconnect cancellation', () {
     server = GameServer(
       gamePack: _NoOpGamePack(),
       disconnectedTurnTimeoutOverride: const Duration(milliseconds: 300),
+      rulesFactoryMap: {
+        'simple_card_battle': () => const SimpleCardGameRules(),
+      },
     );
     await server.start(
       host: 'localhost',
@@ -393,6 +397,9 @@ group('Tests 2-4: auto-skip timer and reconnect cancellation', () {
     server = GameServer(
       gamePack: _NoOpGamePack(),
       disconnectedTurnTimeoutOverride: const Duration(milliseconds: 600),
+      rulesFactoryMap: {
+        'simple_card_battle': () => const SimpleCardGameRules(),
+      },
     );
     await server.start(
       host: 'localhost',

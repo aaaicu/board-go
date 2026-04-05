@@ -9,6 +9,7 @@ import '../../lib/shared/game_pack/game_pack_interface.dart';
 import '../../lib/shared/game_pack/game_pack_rules.dart';
 import '../../lib/shared/game_pack/game_state.dart';
 import '../../lib/shared/game_pack/packs/simple_card_game.dart';
+import '../../lib/shared/game_pack/packs/simple_card_game_rules.dart';
 import '../../lib/shared/game_pack/player_action.dart';
 import '../../lib/shared/game_session/game_session_state.dart';
 import '../../lib/shared/game_session/player_session_state.dart';
@@ -86,7 +87,12 @@ void main() {
     late GameServer server;
 
     setUp(() async {
-      server = GameServer(gamePack: SimpleCardGame());
+      server = GameServer(
+        gamePack: SimpleCardGame(),
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
+      );
       await server.start(
         host: 'localhost',
         port: 0,
@@ -167,10 +173,13 @@ void main() {
     // Not-your-turn rejection
     // -----------------------------------------------------------------------
 
-    test('action from non-active player returns ACTION_REJECTED(NOT_YOUR_TURN)', () async {
+    test('action from non-active player returns ACTION_REJECTED(INVALID_ACTION)', () async {
       final (c1, c2) = await _joinAndStart();
 
       // p2 is NOT the active player at game start (p1 is).
+      // Since 35221fa the server delegates "who can act?" to getAllowedActions
+      // instead of a strict active-player gate, so the rejection code is
+      // invalidAction (not notYourTurn).
       c2.send(
         ActionMessage(
           playerId: 'p2',
@@ -183,7 +192,7 @@ void main() {
       final rejection = await c2.nextOfType(WsMessageType.actionRejected);
       final rej = ActionRejectedMessage.fromEnvelope(rejection);
 
-      expect(rej.code, equals(ActionRejectedCode.notYourTurn));
+      expect(rej.code, equals(ActionRejectedCode.invalidAction));
 
       await Future.wait([c1.close(), c2.close()]);
     });

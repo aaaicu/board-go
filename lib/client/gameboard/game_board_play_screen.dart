@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/game_pack/game_pack_registry.dart';
 import '../../shared/game_pack/views/board_view.dart';
 import '../../shared/game_session/session_phase.dart';
 import '../shared/app_theme.dart';
-import 'stockpile_board_widget.dart';
-import 'secret_hitler_board_widget.dart';
 
 /// Renders the shared game board visible on the iPad (GameBoard) during
 /// the [SessionPhase.inGame] phase.
@@ -54,31 +53,25 @@ class GameBoardPlayScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Stockpile game pack: delegate to the Stockpile-specific board widget.
-    if (boardView.data['packId'] == 'stockpile') {
-      return StockpileBoardWidget(
-        boardView: boardView,
-        playerNames: playerNames,
-        serverStatusWidget: serverStatusWidget,
-        voteInProgress: voteInProgress,
-        showServerStatus: showServerStatus,
-        onToggleServerStatus: onToggleServerStatus,
-        onForceEndVote: onForceEndVote,
-      );
-    }
-    
-    if (boardView.data['packId'] == 'secret_hitler') {
-      return SecretHitlerBoardWidget(
-        boardView: boardView,
-        playerNames: playerNames,
-        serverStatusWidget: serverStatusWidget,
-        voteInProgress: voteInProgress,
-        showServerStatus: showServerStatus,
-        onToggleServerStatus: onToggleServerStatus,
-        onForceEndVote: onForceEndVote,
-      );
+    // Delegate to the registered board widget for this pack, if any.
+    final packId = boardView.data['packId'] as String?;
+    if (packId != null) {
+      final builder =
+          GamePackRegistry.instance.get(packId)?.boardWidgetBuilder;
+      if (builder != null) {
+        return builder(
+          boardView: boardView,
+          playerNames: playerNames,
+          serverStatusWidget: serverStatusWidget,
+          voteInProgress: voteInProgress,
+          showServerStatus: showServerStatus,
+          onToggleServerStatus: onToggleServerStatus,
+          onForceEndVote: onForceEndVote,
+        );
+      }
     }
 
+    // Generic fallback board UI (simple card game layout).
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

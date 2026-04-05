@@ -4,10 +4,8 @@ import 'package:flutter/services.dart';
 
 import 'card_definition.dart';
 import 'game_pack_manifest.dart';
+import 'game_pack_registry.dart';
 import 'game_pack_rules.dart';
-import 'packs/simple_card_game_rules.dart';
-import 'packs/stockpile_rules.dart';
-import 'packs/secret_hitler_rules.dart';
 
 /// Loads game-pack assets (manifest, card definitions) from the Flutter asset
 /// bundle and instantiates the matching [GamePackRules] implementation.
@@ -28,15 +26,8 @@ import 'packs/secret_hitler_rules.dart';
 /// The [bundle] parameter defaults to [rootBundle] but can be replaced with a
 /// [FakeAssetBundle] in unit tests — no widget test harness required.
 class GamePackLoader {
-  /// Ordered list of pack IDs this loader knows about.
-  ///
-  /// A hard-coded list is used for now; in a future sprint this could be
-  /// read from a top-level `packs.json` index file instead.
-  static const List<String> _kKnownPackIds = [
-    'simple_card_battle',
-    'stockpile',
-    'secret_hitler',
-  ];
+  /// Pack IDs are read from the [GamePackRegistry] instead of being hardcoded.
+  List<String> get _knownPackIds => GamePackRegistry.instance.registeredPackIds;
 
   final AssetBundle _bundle;
 
@@ -77,7 +68,7 @@ class GamePackLoader {
   /// errors propagate in debug mode.
   Future<List<GamePackManifest>> listAvailablePacks() async {
     final manifests = <GamePackManifest>[];
-    for (final packId in _kKnownPackIds) {
+    for (final packId in _knownPackIds) {
       try {
         final manifest = await loadManifest(packId);
         manifests.add(manifest);
@@ -94,30 +85,17 @@ class GamePackLoader {
     return manifests;
   }
 
-  /// Instantiates the [GamePackRules] implementation described by [manifest].
+  /// Instantiates the [GamePackRules] implementation for [manifest].
   ///
+  /// Delegates to [GamePackRegistry] — no pack-specific switch statements here.
   /// The [cards] list is injected into rules that require external card data.
-  /// Rules that do not consume card definitions (i.e. they generate their own
-  /// data internally) may ignore the parameter.
   ///
-  /// Throws [UnsupportedError] when [manifest.rulesClass] is not recognised.
+  /// Throws [UnsupportedError] when the pack is not registered.
   GamePackRules createRules(
     GamePackManifest manifest,
     List<CardDefinition> cards,
   ) {
-    switch (manifest.rulesClass) {
-      case 'SimpleCardGameRules':
-        return SimpleCardGameRules(cardDefinitions: cards);
-      case 'StockpileRules':
-        return StockpileRules();
-      case 'SecretHitlerRules':
-        return SecretHitlerRules();
-      default:
-        throw UnsupportedError(
-          'Unknown rulesClass: ${manifest.rulesClass}. '
-          'Register it in GamePackLoader.createRules.',
-        );
-    }
+    return GamePackRegistry.instance.createRules(manifest.id, cards: cards);
   }
 
   // ---------------------------------------------------------------------------

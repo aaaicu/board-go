@@ -13,9 +13,6 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../shared/game_pack/game_pack_interface.dart';
 import '../shared/game_pack/game_state.dart';
 import '../shared/game_pack/game_pack_rules.dart';
-import '../shared/game_pack/packs/simple_card_game_rules.dart';
-import '../shared/game_pack/packs/stockpile_rules.dart';
-import '../shared/game_pack/packs/secret_hitler_rules.dart';
 import '../shared/game_pack/player_action.dart';
 import '../shared/game_session/game_session_state.dart';
 import '../shared/game_session/game_log_entry.dart';
@@ -97,8 +94,12 @@ class GameServer {
     log: const [],
   );
 
-  /// Game-pack rules for the current session.  Defaults to [SimpleCardGameRules].
-  GamePackRules _gamePackRules = const SimpleCardGameRules();
+  /// Game-pack rules for the current session.  Set when the game starts via
+  /// [startGame] using [_rulesFactoryMap].
+  late GamePackRules _gamePackRules;
+
+  /// Pack ID → rules factory, injected from the UI isolate's [GamePackRegistry].
+  final Map<String, GamePackRules Function()> _rulesFactoryMap;
 
   /// Ring-buffer of recently processed [ActionMessage.clientActionId] values.
   /// Used to reject duplicate actions (idempotency).
@@ -155,9 +156,18 @@ class GameServer {
     GameStateStore? store,
     Duration? disconnectedTurnTimeoutOverride,
     Duration? voteTimeoutOverride,
+    Map<String, GamePackRules Function()>? rulesFactoryMap,
   })  : _store = store,
         _disconnectedTurnTimeoutOverride = disconnectedTurnTimeoutOverride,
-        _voteTimeoutOverride = voteTimeoutOverride;
+        _voteTimeoutOverride = voteTimeoutOverride,
+        _rulesFactoryMap = rulesFactoryMap ?? const {} {
+    // Eagerly initialise with the first registered pack so that code paths
+    // that access _gamePackRules before startGame() (e.g. node-message
+    // routing in tests) don't hit a LateInitializationError.
+    if (_rulesFactoryMap.isNotEmpty) {
+      _gamePackRules = _rulesFactoryMap.values.first();
+    }
+  }
 
   int? get port => _httpServer?.port;
   bool get isRunning => _httpServer != null;
@@ -205,21 +215,25 @@ class GameServer {
 
   /// Creates the [GamePackRules] instance for the given [packId].
   ///
-  /// Uses a direct switch rather than [GamePackLoader] because the server runs
-  /// in a Flutter Isolate where [rootBundle] availability is not guaranteed.
-  /// [GamePackLoader] is used on the UI side (e.g. [LobbyScreen]) where the
-  /// asset system is fully initialised.
+  /// Looks up the factory in [_rulesFactoryMap] which was injected from the
+  /// UI isolate's [GamePackRegistry].  Falls back to the first registered
+  /// factory if [packId] is not found (backward compatibility).
   GamePackRules _createRulesForPack(String packId) {
-    switch (packId) {
-      case 'secret_hitler':
-        return SecretHitlerRules();
-      case 'stockpile':
-        return StockpileRules();
-      case 'simple_card_battle':
-      case 'simple_card_game':
-      default:
-        return const SimpleCardGameRules();
+    // Try exact match first.
+    final factory = _rulesFactoryMap[packId];
+    if (factory != null) return factory();
+
+    // Handle the legacy 'simple_card_game' alias.
+    if (packId == 'simple_card_game') {
+      final fallback = _rulesFactoryMap['simple_card_battle'];
+      if (fallback != null) return fallback();
     }
+
+    // Last resort: use the first registered pack, or throw.
+    if (_rulesFactoryMap.isNotEmpty) {
+      return _rulesFactoryMap.values.first();
+    }
+    throw StateError('No game pack rules registered for "$packId"');
   }
 
   /// Resets the session back to the lobby phase.

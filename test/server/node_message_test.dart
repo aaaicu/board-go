@@ -224,7 +224,12 @@ void main() {
     late _FakeSink sinkB;
 
     setUp(() async {
-      server = GameServer(gamePack: _NoOpGamePack());
+      server = GameServer(
+        gamePack: _NoOpGamePack(),
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
+      );
       await server.start(
         initialState: GameState(
           gameId: 'test',

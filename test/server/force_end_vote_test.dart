@@ -10,6 +10,7 @@ import '../../lib/server/server_isolate.dart';
 import '../../lib/server/session_manager.dart';
 import '../../lib/shared/game_pack/game_pack_interface.dart';
 import '../../lib/shared/game_pack/game_state.dart';
+import '../../lib/shared/game_pack/packs/simple_card_game_rules.dart';
 import '../../lib/shared/game_pack/player_action.dart';
 import '../../lib/shared/messages/join_message.dart';
 import '../../lib/shared/messages/join_room_ack_message.dart';
@@ -127,6 +128,9 @@ Future<(GameServer, _WsClient, _WsClient)> _startGameWithTwoPlayers({
   final server = GameServer(
     gamePack: _NoOpGamePack(),
     voteTimeoutOverride: voteTimeoutOverride,
+    rulesFactoryMap: {
+      'simple_card_battle': () => const SimpleCardGameRules(),
+    },
   );
   await server.start(
     host: 'localhost',
@@ -170,7 +174,12 @@ void main() {
 
     setUp(() async {
       sink = _FakeSink();
-      server = GameServer(gamePack: _NoOpGamePack());
+      server = GameServer(
+        gamePack: _NoOpGamePack(),
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
+      );
       await server.start(
         host: 'localhost',
         port: 0,
@@ -252,7 +261,12 @@ void main() {
 
     setUp(() async {
       sink = _FakeSink();
-      server = GameServer(gamePack: _NoOpGamePack());
+      server = GameServer(
+        gamePack: _NoOpGamePack(),
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
+      );
       await server.start(
         host: 'localhost',
         port: 0,
@@ -449,7 +463,12 @@ void main() {
     setUp(() async {
       sink1 = _FakeSink();
       sink2 = _FakeSink();
-      server = GameServer(gamePack: _NoOpGamePack());
+      server = GameServer(
+        gamePack: _NoOpGamePack(),
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
+      );
       await server.start(
         host: 'localhost',
         port: 0,
@@ -582,6 +601,9 @@ void main() {
         gamePack: _NoOpGamePack(),
         eventPort: eventPort.sendPort,
         voteTimeoutOverride: const Duration(milliseconds: 200),
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
       );
       await server.start(
         host: 'localhost',
@@ -647,6 +669,9 @@ void main() {
       final server = GameServer(
         gamePack: _NoOpGamePack(),
         eventPort: eventPort.sendPort,
+        rulesFactoryMap: {
+          'simple_card_battle': () => const SimpleCardGameRules(),
+        },
       );
       await server.start(
         host: 'localhost',

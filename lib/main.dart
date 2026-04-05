@@ -6,12 +6,22 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'client/gameboard/gameboard_screen.dart';
 import 'client/gamenode/gamenode_screen.dart';
 import 'client/shared/app_theme.dart';
+import 'shared/game_pack/game_pack_registry.dart';
+import 'shared/game_pack/packs/simple_card_game_registration.dart';
+import 'shared/game_pack/packs/stockpile_registration.dart';
+import 'shared/game_pack/packs/secret_hitler_registration.dart';
 
 void main() {
   if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+
+  // Register game packs — one line per pack.
+  GamePackRegistry.instance.register(simpleCardGameRegistration());
+  GamePackRegistry.instance.register(stockpileRegistration());
+  GamePackRegistry.instance.register(secretHitlerRegistration());
+
   runApp(const BoardGoApp());
 }
 
