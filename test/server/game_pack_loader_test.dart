@@ -8,7 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:board_go/shared/game_pack/card_definition.dart';
 import 'package:board_go/shared/game_pack/game_pack_loader.dart';
 import 'package:board_go/shared/game_pack/game_pack_manifest.dart';
+import 'package:board_go/shared/game_pack/game_pack_registry.dart';
+import 'package:board_go/shared/game_pack/packs/simple_card_game_registration.dart';
 import 'package:board_go/shared/game_pack/packs/simple_card_game_rules.dart';
+import 'package:board_go/shared/game_pack/packs/stockpile_registration.dart';
+import 'package:board_go/shared/game_pack/packs/secret_hitler_registration.dart';
 
 // ---------------------------------------------------------------------------
 // FakeAssetBundle
@@ -71,6 +75,18 @@ final _kStockpileManifestJson = jsonEncode({
   'rulesClass': 'StockpileRules',
 });
 
+final _kSecretHitlerManifestJson = jsonEncode({
+  'id': 'secret_hitler',
+  'name': 'Secret Hitler',
+  'nameKo': '시크릿 히틀러',
+  'description': '사회적 추론 게임',
+  'minPlayers': 5,
+  'maxPlayers': 10,
+  'estimatedMinutes': 45,
+  'version': '1.0.0',
+  'rulesClass': 'SecretHitlerRules',
+});
+
 /// Minimal 2-card deck used for fast parsing tests.
 final _kMinimalCardsJson = jsonEncode([
   {'id': 'clubs_A', 'suit': 'clubs', 'rank': 'A', 'value': 1, 'displayName': '클럽 A'},
@@ -101,9 +117,10 @@ FakeAssetBundle _bundleWith({
       'assets/gamepacks/$_kPackId/manifest.json': manifestJson,
     if (cardsJson != null)
       'assets/gamepacks/$_kPackId/cards.json': cardsJson,
-    // All bundles include the stockpile manifest so listAvailablePacks()
-    // can iterate every known pack without throwing a FlutterError.
+    // All bundles include these manifests so listAvailablePacks()
+    // can iterate every registered pack without throwing a FlutterError.
     'assets/gamepacks/stockpile/manifest.json': _kStockpileManifestJson,
+    'assets/gamepacks/secret_hitler/manifest.json': _kSecretHitlerManifestJson,
   });
 }
 
@@ -112,6 +129,13 @@ FakeAssetBundle _bundleWith({
 // ---------------------------------------------------------------------------
 
 void main() {
+  // Register game packs so that GamePackLoader can delegate to the registry.
+  setUpAll(() {
+    GamePackRegistry.instance.register(simpleCardGameRegistration());
+    GamePackRegistry.instance.register(stockpileRegistration());
+    GamePackRegistry.instance.register(secretHitlerRegistration());
+  });
+
   // ---------------------------------------------------------------------------
   // loadManifest
   // ---------------------------------------------------------------------------

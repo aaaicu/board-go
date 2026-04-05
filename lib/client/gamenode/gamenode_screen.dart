@@ -20,15 +20,13 @@ import '../../shared/messages/set_ready_message.dart';
 import '../../shared/messages/state_update_message.dart';
 import '../../shared/messages/node_message.dart';
 import '../../shared/messages/ws_message.dart';
-import '../../shared/game_pack/packs/simple_card_game_emotes.dart';
+import '../../shared/game_pack/game_pack_registry.dart';
 import 'allowed_actions_widget.dart';
 import 'discovery_screen.dart';
 import 'game_over_widget.dart';
 import 'hand_widget.dart';
 import 'lobby_waiting_screen.dart';
 import 'player_action_widget.dart';
-import 'stockpile_player_widget.dart';
-import 'secret_hitler_node_widget.dart';
 
 /// Possible UI phases for the GameNode.
 enum _NodePhase { discovery, lobby, inGame }
@@ -95,6 +93,13 @@ class _GameNodeScreenState extends State<GameNodeScreen>
 
   WsConnectionState _connState = WsConnectionState.connected;
   int _reconnectAttempts = 0;
+
+  // ---------------------------------------------------------------------------
+  // Current game pack (for registry lookups)
+  // ---------------------------------------------------------------------------
+
+  /// The packId of the current game, updated when a [PlayerView] is received.
+  String? _currentPackId;
 
   // ---------------------------------------------------------------------------
   // Disconnect handling state
@@ -388,6 +393,7 @@ class _GameNodeScreenState extends State<GameNodeScreen>
         final wasInGame = _phase == _NodePhase.inGame;
         setState(() {
           _playerView = pvm.playerView;
+          _currentPackId = pvm.playerView.data['packId'] as String?;
           if (_phase == _NodePhase.lobby) {
             _phase = _NodePhase.inGame;
             WakelockPlus.enable();
@@ -581,25 +587,26 @@ class _GameNodeScreenState extends State<GameNodeScreen>
     _onNodeMessageReceived(msg);
   }
 
-  /// Extension point for game-specific node message handling.
-  ///
-  /// Currently implements emote overlay display for [SimpleCardGameEmote.emote]
-  /// messages.  Future game packs can extend this method to add custom reactions.
+  /// Handles incoming node messages using the current pack's emote config.
   void _onNodeMessageReceived(NodeMessage msg) {
-    // Resolve fromPlayerId → nickname via the latest lobby snapshot.
     final fromInfo = _lobbyState.players
         .where((p) => p.playerId == msg.fromPlayerId)
         .firstOrNull;
     final nickname = fromInfo?.nickname ?? msg.fromPlayerId;
 
-    if (msg.type == SimpleCardGameEmote.emote) {
+    final emoteConfig =
+        GamePackRegistry.instance.get(_currentPackId ?? '')?.emoteConfig;
+    if (emoteConfig == null) return;
+
+    if (msg.type == emoteConfig.emoteType) {
       final emoji = msg.payload['emoji'] as String?;
       if (emoji == null) return;
       setState(() => _emoteOverlays.add((emoji: emoji, fromNickname: nickname)));
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => _emoteOverlays.removeAt(0));
       });
-    } else if (msg.type == SimpleCardGameEmote.chat) {
+    } else if (emoteConfig.chatType != null &&
+        msg.type == emoteConfig.chatType) {
       final text = msg.payload['text'] as String?;
       if (text == null || text.isEmpty) return;
       setState(() => _chatOverlays.add((text: text, fromNickname: nickname)));
@@ -1268,22 +1275,20 @@ class _GameNodeScreenState extends State<GameNodeScreen>
       return _buildGameOverUI(pv);
     }
 
-    // Stockpile game pack: delegate to the Stockpile-specific player widget.
-    if (pv.data['packId'] == 'stockpile') {
-      return StockpilePlayerWidget(
-        playerView: pv,
-        onAction: (type, params) => _sendAction(type, params),
-      );
-    }
-    
-    // Secret Hitler game pack:
-    if (pv.data['packId'] == 'secret_hitler') {
-      return SecretHitlerNodeWidget(
-        playerView: pv,
-        onAction: (type, params) => _sendAction(type, params),
-      );
+    // Delegate to the registered node widget for this pack, if any.
+    final packId = pv.data['packId'] as String?;
+    if (packId != null) {
+      final builder =
+          GamePackRegistry.instance.get(packId)?.nodeWidgetBuilder;
+      if (builder != null) {
+        return builder(
+          playerView: pv,
+          onAction: (type, params) => _sendAction(type, params),
+        );
+      }
     }
 
+    // Generic fallback node UI (simple card game layout).
     final allowedTypes = pv.allowedActions.map((a) => a.actionType).toSet();
 
     return Column(
@@ -1325,32 +1330,45 @@ class _GameNodeScreenState extends State<GameNodeScreen>
   }
 
   /// Row of quick-reaction buttons + chat button displayed during the game.
+  ///
+  /// Uses the current pack's [PackEmoteConfig] from the registry instead of
+  /// hardcoding any pack-specific constants.
   Widget _buildEmoteBar() {
-    const emotes = SimpleCardGameEmote.all;
+    final emoteConfig =
+        GamePackRegistry.instance.get(_currentPackId ?? '')?.emoteConfig;
+    if (emoteConfig == null) return const SizedBox.shrink();
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        ...emotes.map(
+        ...emoteConfig.emojis.map(
           (emoji) => IconButton(
             onPressed: () => _sendNodeMessage(
-              SimpleCardGameEmote.emote,
+              emoteConfig.emoteType,
               payload: {'emoji': emoji},
             ),
             icon: Text(emoji, style: const TextStyle(fontSize: 22)),
             tooltip: emoji,
           ),
         ),
-        IconButton(
-          onPressed: _showChatDialog,
-          icon: const Icon(Icons.chat_bubble_outline),
-          tooltip: '메시지 전송',
-        ),
+        if (emoteConfig.chatType != null)
+          IconButton(
+            onPressed: _showChatDialog,
+            icon: const Icon(Icons.chat_bubble_outline),
+            tooltip: '메시지 전송',
+          ),
       ],
     );
   }
 
-  /// Shows a text input dialog and sends a [SimpleCardGameEmote.chat] message.
+  /// Shows a text input dialog and sends a chat message using the current
+  /// pack's emote config.
   Future<void> _showChatDialog() async {
+    final emoteConfig =
+        GamePackRegistry.instance.get(_currentPackId ?? '')?.emoteConfig;
+    if (emoteConfig?.chatType == null) return;
+
+    final maxLen = emoteConfig!.chatMaxLength;
     final controller = TextEditingController();
     await showDialog<void>(
       context: context,
@@ -1358,8 +1376,8 @@ class _GameNodeScreenState extends State<GameNodeScreen>
         title: const Text('메시지 전송'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: '최대 20자'),
-          maxLength: SimpleCardGameEmote.chatMaxLength,
+          decoration: InputDecoration(hintText: '최대 $maxLen자'),
+          maxLength: maxLen,
           autofocus: true,
           onSubmitted: (_) => Navigator.of(context).pop(),
         ),
@@ -1377,8 +1395,8 @@ class _GameNodeScreenState extends State<GameNodeScreen>
     );
 
     final text = controller.text.trim();
-    if (text.isNotEmpty && text.length <= SimpleCardGameEmote.chatMaxLength) {
-      _sendNodeMessage(SimpleCardGameEmote.chat, payload: {'text': text});
+    if (text.isNotEmpty && text.length <= maxLen) {
+      _sendNodeMessage(emoteConfig.chatType!, payload: {'text': text});
     }
   }
 

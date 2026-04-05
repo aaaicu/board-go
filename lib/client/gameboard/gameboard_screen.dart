@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../server/mdns_registrar.dart';
 import '../../server/server_isolate.dart';
 import '../../shared/game_pack/game_pack_interface.dart';
+import '../../shared/game_pack/game_pack_registry.dart';
 import '../../shared/game_pack/game_state.dart';
 import '../../shared/game_pack/player_action.dart';
 import '../../shared/game_pack/views/board_view.dart';
@@ -53,6 +54,7 @@ Future<ServerHandle> _defaultServerStarter() => ServerIsolate.start(
         data: {},
       ),
       port: 8080,
+      rulesFactoryMap: GamePackRegistry.instance.rulesFactoryMap,
     );
 
 /// IP override injected via `--dart-define=HOST_IP=192.168.x.x` at build time.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../shared/game_pack/game_pack_interface.dart';
+import '../shared/game_pack/game_pack_rules.dart';
 import '../shared/game_pack/game_state.dart';
 import 'game_server.dart';
 
@@ -147,10 +148,14 @@ class _IsolateConfig {
   final SendPort commandPort;
   final SendPort eventPort;
 
+  /// Pack ID → rules factory, passed from the UI isolate's [GamePackRegistry].
+  final Map<String, GamePackRules Function()> rulesFactoryMap;
+
   _IsolateConfig({
     required this.packFactory,
     required this.commandPort,
     required this.eventPort,
+    required this.rulesFactoryMap,
   });
 }
 
@@ -159,7 +164,11 @@ void _serverIsolateEntry(_IsolateConfig config) {
   config.commandPort.send(receivePort.sendPort);
 
   final pack = config.packFactory();
-  final server = GameServer(gamePack: pack, eventPort: config.eventPort);
+  final server = GameServer(
+    gamePack: pack,
+    eventPort: config.eventPort,
+    rulesFactoryMap: config.rulesFactoryMap,
+  );
 
   receivePort.listen((message) async {
     if (message is _StartServerCommand) {
@@ -332,6 +341,7 @@ class ServerIsolate {
     required GameState initialState,
     String host = '0.0.0.0',
     int port = 8080,
+    Map<String, GamePackRules Function()> rulesFactoryMap = const {},
   }) async {
     // Event port receives PlayerEvent messages from the server isolate.
     final eventReceivePort = ReceivePort();
@@ -343,6 +353,7 @@ class ServerIsolate {
         packFactory: packFactory,
         commandPort: bootstrapPort.sendPort,
         eventPort: eventReceivePort.sendPort,
+        rulesFactoryMap: rulesFactoryMap,
       ),
     );
 
