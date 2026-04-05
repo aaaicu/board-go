@@ -409,6 +409,10 @@ class _GameNodeScreenState extends State<GameNodeScreen>
               pvm.playerView.data['_nodeOrientation'] as String? ?? 'portrait');
         }
 
+      case WsMessageType.actionRejected:
+        // Server rejected our action — unblock the UI so the player can retry.
+        setState(() => _actionPending = false);
+
       // BOARD_VIEW is for the GameBoard (iPad); GameNode ignores it.
       case WsMessageType.boardView:
         break;

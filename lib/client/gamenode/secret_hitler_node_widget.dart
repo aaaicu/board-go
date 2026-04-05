@@ -87,6 +87,20 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
   // active action UI. null means the default idle center is shown.
   String? _activeMessageAction;
 
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  @override
+  void didUpdateWidget(SecretHitlerNodeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldPhase = oldWidget.playerView.data['phase'] as String? ?? '';
+    final newPhase = widget.playerView.data['phase'] as String? ?? '';
+    if (oldPhase != newPhase) {
+      // Phase changed — the active action panel belongs to the old phase.
+      // Clear it so the UI auto-updates to the new phase's message/action.
+      _activeMessageAction = null;
+    }
+  }
+
   // ── Data accessors ────────────────────────────────────────────────────────
 
   Map<String, dynamic> get _data => widget.playerView.data;
@@ -508,19 +522,21 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
   }
 
   Widget _buildCardButtons() {
+    // 버튼 색상은 당적과 무관하게 중립 색상 사용 — 타인이 화면을 봐도 소속을 알 수 없도록
+    const neutralColor = _kGold;
     return Row(
       children: [
         _buildTopBarCardButton(
           label: '역할',
           isActive: _showingRole,
-          color: _myParty == 'LIBERAL' ? _kLiberalBlue : _kFascistRed,
+          color: neutralColor,
           onTap: _onRoleButtonTap,
         ),
         const SizedBox(width: 6),
         _buildTopBarCardButton(
           label: '당적',
           isActive: _showingParty,
-          color: _myParty == 'LIBERAL' ? _kLiberalBlue : _kFascistRed,
+          color: neutralColor,
           onTap: _onPartyButtonTap,
         ),
       ],
@@ -610,11 +626,7 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
             ),
           ),
           const SizedBox(height: 20),
-          // Role indicator
-          if (myRole.isNotEmpty) ...[
-            _buildCompactRoleIndicator(),
-            const SizedBox(height: 16),
-          ],
+          // 역할/당적은 버튼을 눌러야만 확인 가능 — 메인 화면에서 노출하지 않음
           // Government position badge
           if (isPresident || isChancellor)
             Container(
@@ -680,49 +692,6 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
                 fontSize: 14,
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCompactRoleIndicator() {
-    final isLiberal = _myParty == 'LIBERAL';
-    final color = isLiberal ? _kLiberalBlue : _kFascistRed;
-    final lightColor = isLiberal ? _kLiberalLight : _kFascistLight;
-    final roleLabel = _myRole == 'LIBERAL'
-        ? '자유주의자'
-        : _myRole == 'HITLER'
-            ? '히틀러'
-            : '파시스트';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _myRole == 'HITLER'
-                ? Icons.sentiment_very_dissatisfied
-                : isLiberal
-                    ? Icons.flutter_dash
-                    : Icons.dangerous,
-            color: lightColor,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            roleLabel,
-            style: TextStyle(
-              color: lightColor,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
         ],
       ),
     );
