@@ -144,14 +144,15 @@ void main() {
       expect(find.byType(QrCodeWidget), findsOneWidget);
     });
 
-    testWidgets('AppBar title is "board-go"', (tester) async {
+    testWidgets('AppBar shows logo image', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: GameboardScreen(
               serverStarter: () => Completer<ServerHandle>().future),
         ),
       );
-      expect(find.text('board-go'), findsOneWidget);
+      // The AppBar now uses a logo image instead of text.
+      expect(find.byType(Image), findsOneWidget);
     });
 
     testWidgets('displays the server port in the status widget', (tester) async {

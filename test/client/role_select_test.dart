@@ -7,9 +7,9 @@ import '../../lib/client/gamenode/gamenode_screen.dart';
 
 void main() {
   group('RoleSelectScreen', () {
-    testWidgets('shows "board-go" title', (tester) async {
+    testWidgets('shows role selection prompt', (tester) async {
       await tester.pumpWidget(const MaterialApp(home: RoleSelectScreen()));
-      expect(find.text('board-go'), findsOneWidget);
+      expect(find.text('이 기기의 역할을 선택해주세요'), findsOneWidget);
     });
 
     testWidgets('shows 게임 보드 and 플레이어 cards', (tester) async {
