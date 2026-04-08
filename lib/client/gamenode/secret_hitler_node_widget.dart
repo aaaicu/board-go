@@ -1866,49 +1866,7 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             for (final policy in policies)
-              Container(
-                width: 80,
-                height: 110,
-                decoration: BoxDecoration(
-                  color: policy == 'LIBERAL'
-                      ? _kLiberalBlue.withValues(alpha: 0.2)
-                      : _kFascistRed.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: policy == 'LIBERAL'
-                        ? _kLiberalBlue
-                        : _kFascistRed,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        policy == 'LIBERAL'
-                            ? Icons.star
-                            : Icons.warning_amber,
-                        color: policy == 'LIBERAL'
-                            ? _kLiberalLight
-                            : _kFascistLight,
-                        size: 28,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        policy == 'LIBERAL' ? '자유' : '파시',
-                        style: TextStyle(
-                          color: policy == 'LIBERAL'
-                              ? _kLiberalLight
-                              : _kFascistLight,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _buildPeekPolicyCard(policy: policy),
           ],
         ),
         const SizedBox(height: 24),
@@ -1919,6 +1877,80 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
           onTap: () => widget.onAction('EXEC_FINISH_PEEK', {}),
         ),
       ],
+    );
+  }
+
+  /// Policy card for the peek screen — same design as [_buildPolicyCard] but
+  /// non-interactive (display-only).
+  Widget _buildPeekPolicyCard({required String policy}) {
+    final isLiberal = policy == 'LIBERAL';
+    final color = isLiberal ? _kLiberalBlue : _kFascistRed;
+    const cream = Color(0xFFF5E6C8);
+    const creamDark = Color(0xFFE8D5B0);
+
+    return Container(
+      width: 105,
+      height: 155,
+      decoration: BoxDecoration(
+        color: cream,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: creamDark, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Container(
+        margin: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color, width: 2.5),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 6),
+            Icon(
+              isLiberal ? Icons.flutter_dash : Icons.dangerous,
+              color: color,
+              size: 32,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isLiberal ? 'LIBERAL' : 'FASC1ST',
+              style: TextStyle(
+                color: color,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+              ),
+            ),
+            Text(
+              'ARTICLE',
+              style: TextStyle(
+                color: color.withValues(alpha: 0.7),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...List.generate(
+              3,
+              (i) => Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 2),
+                child: Container(
+                    height: 1,
+                    color: color.withValues(alpha: 0.2)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

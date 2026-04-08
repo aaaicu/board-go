@@ -499,24 +499,52 @@ class _GameboardScreenState extends State<GameboardScreen> {
         // In-game: show the board view.
         if (_gameStarted && _boardView != null)
           Expanded(
-            child: GameBoardPlayScreen(
-              boardView: _boardView!,
-              playerNames: {
-                for (final p in _lobbyState.players) p.playerId: p.nickname
-              },
-              voteInProgress: _voteInProgress,
-              showServerStatus: _showServerStatus,
-              onToggleServerStatus: () =>
-                  setState(() => _showServerStatus = !_showServerStatus),
-              onForceEndVote: _onForceEndVote,
-              serverStatusWidget: _showServerStatus
-                  ? ServerStatusWidget(
-                      port: handle.port,
-                      playerCount: _lobbyState.players.length,
-                      playerNames:
-                          _lobbyState.players.map((p) => p.nickname).toList(),
-                    )
-                  : null,
+            child: Stack(
+              children: [
+                GameBoardPlayScreen(
+                  boardView: _boardView!,
+                  playerNames: {
+                    for (final p in _lobbyState.players) p.playerId: p.nickname
+                  },
+                  voteInProgress: _voteInProgress,
+                  showServerStatus: _showServerStatus,
+                  onToggleServerStatus: () =>
+                      setState(() => _showServerStatus = !_showServerStatus),
+                  onForceEndVote: _onForceEndVote,
+                  serverStatusWidget: _showServerStatus
+                      ? ServerStatusWidget(
+                          port: handle.port,
+                          playerCount: _lobbyState.players.length,
+                          playerNames:
+                              _lobbyState.players.map((p) => p.nickname).toList(),
+                        )
+                      : null,
+                ),
+                // "Return to lobby" button — visible after game-over dialog dismissed.
+                if (_gameOverDialogShown)
+                  Positioned(
+                    bottom: 24,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          await _handle?.resetGame();
+                        },
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('게임 준비 단계로'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: AppTheme.onPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 14),
+                          textStyle: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           )
         // Lobby: show the lobby screen.
