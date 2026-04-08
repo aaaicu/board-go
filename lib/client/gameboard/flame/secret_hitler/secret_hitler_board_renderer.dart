@@ -1,8 +1,10 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../shared/game_pack/game_board_renderer.dart';
 import '../../../../shared/game_pack/views/board_view.dart';
@@ -171,10 +173,45 @@ class _SHBoardComponent extends PositionComponent {
   Map<String, String>     _completedVotes = {};
   String? _voteResult;
 
+  // ── Image assets ──────────────────────────────────────────────────────────
+  ui.Image? _imgTableBg;
+  ui.Image? _imgLiberalBg;
+  ui.Image? _imgFascistBg;
+  ui.Image? _imgCardLiberalBg;
+  ui.Image? _imgCardFascistBg;
+  ui.Image? _imgEmblemDove;
+  ui.Image? _imgEmblemSkull;
+
   _SHBoardComponent({required this.playerNames}) {
     anchor   = Anchor.center;
     position = Vector2.zero();
     size     = Vector2(_kBoardW, _kBoardH);
+  }
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    const base = 'assets/gamepacks/secret_hitler/images/';
+    try {
+      final results = await Future.wait([
+        _loadUiImage('${base}board_table_bg.jpg'),
+        _loadUiImage('${base}board_liberal_bg.jpg'),
+        _loadUiImage('${base}board_fascist_bg.jpg'),
+        _loadUiImage('${base}card_liberal_bg.jpg'),
+        _loadUiImage('${base}card_fascist_bg.jpg'),
+        _loadUiImage('${base}emblem_dove.jpg'),
+        _loadUiImage('${base}emblem_skull.jpg'),
+      ]);
+      _imgTableBg       = results[0];
+      _imgLiberalBg     = results[1];
+      _imgFascistBg     = results[2];
+      _imgCardLiberalBg = results[3];
+      _imgCardFascistBg = results[4];
+      _imgEmblemDove    = results[5];
+      _imgEmblemSkull   = results[6];
+    } catch (_) {
+      // Images failed to load — canvas fallback stays active.
+    }
   }
 
   // updateData is kept unchanged — callers depend on this exact signature
@@ -238,13 +275,16 @@ class _SHBoardComponent extends PositionComponent {
   // ═══════════════════════════════════════════════════════════════════════════
 
   void _drawBoardBackground(Canvas canvas) {
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.x, size.y),
-        const Radius.circular(16),
-      ),
-      Paint()..color = const Color(0xFF0A0C14),
-    );
+    final boardRect = Rect.fromLTWH(0, 0, size.x, size.y);
+    final rrect = RRect.fromRectAndRadius(boardRect, const Radius.circular(16));
+    if (_imgTableBg != null) {
+      canvas.save();
+      canvas.clipRRect(rrect);
+      _drawScaledImage(canvas, _imgTableBg!, boardRect);
+      canvas.restore();
+    } else {
+      canvas.drawRRect(rrect, Paint()..color = const Color(0xFF0A0C14));
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -258,14 +298,27 @@ class _SHBoardComponent extends PositionComponent {
     final th = _kLibTrackH;
     final trackRect = Rect.fromLTWH(tx, ty, tw, th);
 
-    // — Background gradient (dark navy at edges → slightly lighter centre)
-    _paintRect(canvas, trackRect, radius: 10,
-        shader: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_kLibBgLight, _kLibBg, _kLibBgDark],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(trackRect));
+    // — Background
+    if (_imgLiberalBg != null) {
+      canvas.save();
+      canvas.clipRRect(
+          RRect.fromRectAndRadius(trackRect, const Radius.circular(10)));
+      _drawScaledImage(canvas, _imgLiberalBg!, trackRect);
+      // Dark blue overlay to preserve legibility of overlaid elements
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(trackRect, const Radius.circular(10)),
+        Paint()..color = const Color(0x721A3560),
+      );
+      canvas.restore();
+    } else {
+      _paintRect(canvas, trackRect, radius: 10,
+          shader: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_kLibBgLight, _kLibBg, _kLibBgDark],
+            stops: const [0.0, 0.5, 1.0],
+          ).createShader(trackRect));
+    }
 
     // — Outer border (bright blue stroke)
     _strokeRRect(canvas, trackRect, 10, _kLibBorder, 2.5);
@@ -354,14 +407,27 @@ class _SHBoardComponent extends PositionComponent {
     final th = _kFasTrackH;
     final trackRect = Rect.fromLTWH(tx, ty, tw, th);
 
-    // — Background gradient
-    _paintRect(canvas, trackRect, radius: 10,
-        shader: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_kFasBgLight, _kFasBg, _kFasBgDark],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(trackRect));
+    // — Background
+    if (_imgFascistBg != null) {
+      canvas.save();
+      canvas.clipRRect(
+          RRect.fromRectAndRadius(trackRect, const Radius.circular(10)));
+      _drawScaledImage(canvas, _imgFascistBg!, trackRect);
+      // Dark crimson overlay to preserve legibility of overlaid elements
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(trackRect, const Radius.circular(10)),
+        Paint()..color = const Color(0x725C1515),
+      );
+      canvas.restore();
+    } else {
+      _paintRect(canvas, trackRect, radius: 10,
+          shader: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_kFasBgLight, _kFasBg, _kFasBgDark],
+            stops: const [0.0, 0.5, 1.0],
+          ).createShader(trackRect));
+    }
 
     // — Outer border
     _strokeRRect(canvas, trackRect, 10, _kFasBorder, 2.5);
@@ -590,54 +656,68 @@ class _SHBoardComponent extends PositionComponent {
   void _drawFilledPolicyCard(
       Canvas canvas, double x, double y, double w, double h,
       {required bool isLiberal}) {
-    final cardRect   = Rect.fromLTWH(x, y, w, h);
-    final cardColor  = isLiberal ? _kLibCard : _kFasCard;
-    final borderHi   = isLiberal ? _kLibBorder : _kFasBorder;
+    final cardRect  = Rect.fromLTWH(x, y, w, h);
+    final borderHi  = isLiberal ? _kLibBorder : _kFasBorder;
+    final cardImg   = isLiberal ? _imgCardLiberalBg : _imgCardFascistBg;
+    final emblemImg = isLiberal ? _imgEmblemDove : _imgEmblemSkull;
 
-    // Card body — rich colored background
-    _paintRect(canvas, cardRect, radius: 7,
-        shader: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            cardColor.withValues(alpha: 0.9),
-            cardColor,
-            (isLiberal ? _kLibBgDark : _kFasBgDark),
-          ],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(cardRect));
-
-    // Outer glowing border
-    _strokeRRect(canvas, cardRect, 7, borderHi, 2.2);
-
-    // Inner parchment inset frame — documents look
-    final innerRect = cardRect.deflate(6);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(innerRect, const Radius.circular(4)),
-      Paint()..color = _kParchment.withValues(alpha: 0.08),
-    );
-    _strokeRRect(canvas, innerRect, 4,
-        _kCream.withValues(alpha: 0.25), 1.0);
-
-    // Icon centred in upper half
-    final iconCX = x + w / 2;
-    final iconCY = y + 42;
-    if (isLiberal) {
-      _drawDoveFull(canvas, iconCX, iconCY, 26, _kCream);
+    // — Card background
+    if (cardImg != null) {
+      canvas.save();
+      canvas.clipRRect(
+          RRect.fromRectAndRadius(cardRect, const Radius.circular(7)));
+      _drawScaledImage(canvas, cardImg, cardRect);
+      canvas.restore();
     } else {
-      _drawSkullFull(canvas, iconCX, iconCY, 22, _kCream);
+      final cardColor = isLiberal ? _kLibCard : _kFasCard;
+      _paintRect(canvas, cardRect, radius: 7,
+          shader: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              cardColor.withValues(alpha: 0.9),
+              cardColor,
+              (isLiberal ? _kLibBgDark : _kFasBgDark),
+            ],
+            stops: const [0.0, 0.5, 1.0],
+          ).createShader(cardRect));
     }
 
-    // Title text
+    // — Outer glowing border (always drawn on top)
+    _strokeRRect(canvas, cardRect, 7, borderHi, 2.2);
+
+    // — Emblem in upper half
+    final iconCX = x + w / 2;
+    final iconCY = y + 42;
+    if (emblemImg != null) {
+      final emblemSize = w * 0.58;
+      _drawScaledImage(
+        canvas,
+        emblemImg,
+        Rect.fromCenter(
+          center: Offset(iconCX, iconCY),
+          width: emblemSize,
+          height: emblemSize,
+        ),
+      );
+    } else {
+      if (isLiberal) {
+        _drawDoveFull(canvas, iconCX, iconCY, 26, _kCream);
+      } else {
+        _drawSkullFull(canvas, iconCX, iconCY, 22, _kCream);
+      }
+    }
+
+    // — Title text
     final titleLabel = isLiberal ? 'LIBERAL' : 'FASC1ST';
     _drawText(canvas, titleLabel, iconCX, y + 76, 10.5,
         color: _kCream, center: true, bold: true, letterSpacing: 2);
 
-    // "ARTICLE" subtitle
+    // — "ARTICLE" subtitle
     _drawText(canvas, 'ARTICLE', iconCX, y + 90, 8,
         color: _kCream.withValues(alpha: 0.65), center: true, letterSpacing: 1);
 
-    // Horizontal document lines (parchment lines)
+    // — Horizontal document lines
     final linePaint = Paint()
       ..color = _kCream.withValues(alpha: 0.15)
       ..strokeWidth = 0.8;
@@ -1120,6 +1200,19 @@ class _SHBoardComponent extends PositionComponent {
 
   void _drawDoveLaurelEmblem(
       Canvas canvas, double cx, double cy, double size) {
+    if (_imgEmblemDove != null) {
+      _drawScaledImage(
+        canvas,
+        _imgEmblemDove!,
+        Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: size * 1.4,
+          height: size * 1.4,
+        ),
+        opacity: 0.28,
+      );
+      return;
+    }
     final laurelPaint = Paint()
       ..color = _kLibAccent.withValues(alpha: 0.28)
       ..style = PaintingStyle.stroke
@@ -1271,6 +1364,19 @@ class _SHBoardComponent extends PositionComponent {
 
   void _drawLargeSkull(
       Canvas canvas, double cx, double cy, double size) {
+    if (_imgEmblemSkull != null) {
+      _drawScaledImage(
+        canvas,
+        _imgEmblemSkull!,
+        Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: size * 1.6,
+          height: size * 1.6,
+        ),
+        opacity: 0.30,
+      );
+      return;
+    }
     _drawSkullFull(canvas, cx, cy, size,
         _kFasAccent.withValues(alpha: 0.30));
   }
@@ -1413,6 +1519,25 @@ class _SHBoardComponent extends PositionComponent {
   // PAINT UTILITIES
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // ── Image helpers ─────────────────────────────────────────────────────────
+
+  /// Draws [img] scaled to fill [dst]. Optional [opacity] (0–1).
+  void _drawScaledImage(Canvas canvas, ui.Image img, Rect dst,
+      {double opacity = 1.0}) {
+    final src =
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
+    final paint = Paint()..filterQuality = FilterQuality.medium;
+    if (opacity < 1.0) {
+      final alpha = (opacity * 255).round();
+      canvas.saveLayer(
+          dst, Paint()..color = Color.fromARGB(alpha, 255, 255, 255));
+      canvas.drawImageRect(img, src, dst, paint);
+      canvas.restore();
+    } else {
+      canvas.drawImageRect(img, src, dst, paint);
+    }
+  }
+
   void _paintRect(Canvas canvas, Rect rect,
       {double radius = 0, Shader? shader, Color? color}) {
     final paint = Paint();
@@ -1468,4 +1593,16 @@ class _SHBoardComponent extends PositionComponent {
       tp.paint(canvas, Offset(x, y));
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Asset loader — loads a Flutter asset as a dart:ui Image for Canvas drawing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<ui.Image> _loadUiImage(String assetPath) async {
+  final data = await rootBundle.load(assetPath);
+  final codec =
+      await ui.instantiateImageCodec(data.buffer.asUint8List());
+  final frame = await codec.getNextFrame();
+  return frame.image;
 }

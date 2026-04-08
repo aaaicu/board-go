@@ -55,3 +55,4 @@ flutter:
     - assets/gamepacks/stockpile/image/
     - assets/gamepacks/secret_hitler/manifest.json
     - assets/gamepacks/secret_hitler/cards.json
+    - assets/gamepacks/secret_hitler/images/
