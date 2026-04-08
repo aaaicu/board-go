@@ -32,3 +32,4 @@ dist/
 *~
 .claude/flutter_01.log
 .claude/
+flutter_*.log
