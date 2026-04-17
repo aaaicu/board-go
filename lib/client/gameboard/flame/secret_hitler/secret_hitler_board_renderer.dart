@@ -209,8 +209,10 @@ class _SHBoardComponent extends PositionComponent {
       _imgCardFascistBg = results[4];
       _imgEmblemDove    = results[5];
       _imgEmblemSkull   = results[6];
-    } catch (_) {
+    } catch (e) {
       // Images failed to load — canvas fallback stays active.
+      // ignore: avoid_print
+      print('[SH Board] Image load failed: $e');
     }
   }
 
@@ -304,10 +306,10 @@ class _SHBoardComponent extends PositionComponent {
       canvas.clipRRect(
           RRect.fromRectAndRadius(trackRect, const Radius.circular(10)));
       _drawScaledImage(canvas, _imgLiberalBg!, trackRect);
-      // Dark blue overlay to preserve legibility of overlaid elements
+      // Light overlay — let the texture breathe
       canvas.drawRRect(
         RRect.fromRectAndRadius(trackRect, const Radius.circular(10)),
-        Paint()..color = const Color(0x721A3560),
+        Paint()..color = const Color(0x401A3560),
       );
       canvas.restore();
     } else {
@@ -320,27 +322,20 @@ class _SHBoardComponent extends PositionComponent {
           ).createShader(trackRect));
     }
 
-    // — Outer border (bright blue stroke)
-    _strokeRRect(canvas, trackRect, 10, _kLibBorder, 2.5);
-    // — Inner inset border
-    _strokeRRect(canvas, trackRect.deflate(5), 7,
-        _kLibAccent.withValues(alpha: 0.4), 1.2);
-
-    // — Roman columns on far left and far right (inside border)
-    _drawColumn(canvas, tx + 14, ty + 28, 22, th - 44, _kLibColumn);
-    _drawColumn(canvas, tx + tw - 36, ty + 28, 22, th - 44, _kLibColumn);
+    // — Single outer border (subtle glow over texture)
+    _strokeRRect(canvas, trackRect, 10, _kLibBorder.withValues(alpha: 0.5), 1.8);
 
     // — Header banner (LIBERAL) — carved parchment ribbon
     _drawLiberalHeaderBanner(canvas, tx, ty, tw);
 
-    // — DRAW PILE label (left, between left column and slots)
-    final drawX = tx + 48.0;
+    // — DRAW PILE label (left side)
+    final drawX = tx + 28.0;
     final drawY = ty + _kLibSlotsOffY + 6;
     _drawPileLabel(canvas, 'DRAW\nPILE', drawX, drawY, _kLibAccent,
         count: _deckCount, arrowRight: true);
 
-    // — DISCARD PILE label (right)
-    final discardX = tx + tw - 90.0;
+    // — DISCARD PILE label (right side)
+    final discardX = tx + tw - 70.0;
     final discardY = ty + _kLibSlotsOffY + 6;
     _drawPileLabel(canvas, 'DISCARD\nPILE', discardX, discardY, _kLibAccent,
         count: _discardCount, arrowLeft: true);
@@ -367,33 +362,20 @@ class _SHBoardComponent extends PositionComponent {
   void _drawLiberalHeaderBanner(
       Canvas canvas, double tx, double ty, double tw) {
     const bannerH = 30.0;
-    final bannerRect = Rect.fromLTWH(tx + 50, ty + 4, tw - 100, bannerH);
+    final bannerRect = Rect.fromLTWH(tx + 80, ty + 4, tw - 160, bannerH);
 
-    // Parchment fill
-    _paintRect(canvas, bannerRect, radius: 4,
-        shader: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_kParchment, _kCream, _kCreamDark],
-          stops: [0.0, 0.5, 1.0],
-        ).createShader(bannerRect));
-    _strokeRRect(canvas, bannerRect, 4, _kLibBorder, 1.5);
-
-    // Decorative flanking lines
-    final lineY = ty + bannerH / 2 + 4;
-    final linePaint = Paint()
-      ..color = _kLibBorder.withValues(alpha: 0.5)
-      ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(tx + 55, lineY), Offset(tx + 155, lineY), linePaint);
-    canvas.drawLine(Offset(tx + tw - 155, lineY), Offset(tx + tw - 55, lineY), linePaint);
-
-    // Small diamond ornaments flanking the text
-    _drawDiamond(canvas, tx + tw / 2 - 100, lineY, 5, _kLibBorder);
-    _drawDiamond(canvas, tx + tw / 2 + 100, lineY, 5, _kLibBorder);
+    // Semi-transparent dark banner over texture
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bannerRect, const Radius.circular(4)),
+      Paint()..color = _kLibBgDark.withValues(alpha: 0.65),
+    );
+    _strokeRRect(canvas, bannerRect, 4,
+        _kLibBorder.withValues(alpha: 0.4), 1.0);
 
     // "LIBERAL" title
     _drawText(canvas, 'LIBERAL', tx + tw / 2, ty + 9, 16,
-        color: _kLibBgDark, center: true, bold: true, letterSpacing: 10);
+        color: _kCream.withValues(alpha: 0.9),
+        center: true, bold: true, letterSpacing: 10);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -413,10 +395,10 @@ class _SHBoardComponent extends PositionComponent {
       canvas.clipRRect(
           RRect.fromRectAndRadius(trackRect, const Radius.circular(10)));
       _drawScaledImage(canvas, _imgFascistBg!, trackRect);
-      // Dark crimson overlay to preserve legibility of overlaid elements
+      // Light overlay — let the texture breathe
       canvas.drawRRect(
         RRect.fromRectAndRadius(trackRect, const Radius.circular(10)),
-        Paint()..color = const Color(0x725C1515),
+        Paint()..color = const Color(0x405C1515),
       );
       canvas.restore();
     } else {
@@ -429,14 +411,8 @@ class _SHBoardComponent extends PositionComponent {
           ).createShader(trackRect));
     }
 
-    // — Outer border
-    _strokeRRect(canvas, trackRect, 10, _kFasBorder, 2.5);
-    _strokeRRect(canvas, trackRect.deflate(5), 7,
-        _kFasAccent.withValues(alpha: 0.35), 1.2);
-
-    // — Chain borders (top and bottom)
-    _drawChainBorder(canvas, tx + 8, ty + 5,   tw - 16);
-    _drawChainBorder(canvas, tx + 8, ty + th - 11, tw - 16);
+    // — Single outer border (subtle glow over texture)
+    _strokeRRect(canvas, trackRect, 10, _kFasBorder.withValues(alpha: 0.5), 1.8);
 
     // — Header banner (FASC1ST)
     _drawFascistHeaderBanner(canvas, tx, ty, tw);
@@ -480,33 +456,20 @@ class _SHBoardComponent extends PositionComponent {
   void _drawFascistHeaderBanner(
       Canvas canvas, double tx, double ty, double tw) {
     const bannerH = 30.0;
-    final bannerRect = Rect.fromLTWH(tx + 50, ty + 4, tw - 100, bannerH);
+    final bannerRect = Rect.fromLTWH(tx + 80, ty + 4, tw - 160, bannerH);
 
-    // Dark crimson fill
-    _paintRect(canvas, bannerRect, radius: 4,
-        shader: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_kFasAccent, _kFasBg, _kFasBgDark],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(bannerRect));
-    _strokeRRect(canvas, bannerRect, 4, _kFasBorder, 1.5);
-
-    // Flanking chain segments on banner
-    final lineY = ty + bannerH / 2 + 4;
-    final chainPaint = Paint()
-      ..color = _kFasChainHi.withValues(alpha: 0.6)
-      ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(tx + 55, lineY), Offset(tx + 160, lineY), chainPaint);
-    canvas.drawLine(Offset(tx + tw - 160, lineY), Offset(tx + tw - 55, lineY), chainPaint);
-
-    // Small skull ornaments flanking the text
-    _drawSmallSkull(canvas, tx + tw / 2 - 105, lineY, 8, _kFasChainHi);
-    _drawSmallSkull(canvas, tx + tw / 2 + 105, lineY, 8, _kFasChainHi);
+    // Semi-transparent dark banner over texture
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bannerRect, const Radius.circular(4)),
+      Paint()..color = _kFasBgDark.withValues(alpha: 0.65),
+    );
+    _strokeRRect(canvas, bannerRect, 4,
+        _kFasBorder.withValues(alpha: 0.4), 1.0);
 
     // "FASC1ST" title
     _drawText(canvas, 'FASC1ST', tx + tw / 2, ty + 9, 16,
-        color: _kCream, center: true, bold: true, letterSpacing: 10);
+        color: _kCream.withValues(alpha: 0.9),
+        center: true, bold: true, letterSpacing: 10);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -522,19 +485,16 @@ class _SHBoardComponent extends PositionComponent {
     final stripX  = tx + 8;
     final stripW  = tw - 16;
 
-    // Strip background (slightly darker band)
-    _paintRect(canvas, Rect.fromLTWH(stripX, stripY, stripW, stripH),
-        radius: 6,
-        shader: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            _kLibBgDark.withValues(alpha: 0.6),
-            _kLibBgDark.withValues(alpha: 0.9),
-          ],
-        ).createShader(Rect.fromLTWH(stripX, stripY, stripW, stripH)));
+    // Strip background — semi-transparent dark band over texture
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(stripX, stripY, stripW, stripH),
+        const Radius.circular(6),
+      ),
+      Paint()..color = const Color(0xFF0A0A0A).withValues(alpha: 0.4),
+    );
     _strokeRRect(canvas, Rect.fromLTWH(stripX, stripY, stripW, stripH), 6,
-        _kLibBorder.withValues(alpha: 0.3), 1.0);
+        _kLibBorder.withValues(alpha: 0.2), 0.8);
 
     // "선거 트래커" label on the left
     _drawText(canvas, '선거 트래커',
@@ -629,26 +589,15 @@ class _SHBoardComponent extends PositionComponent {
     final accentColor = isLiberal ? _kLibAccent : _kFasAccent;
     final slotRect    = Rect.fromLTWH(x, y, w, h);
 
-    // Slightly darkened inset background
+    // Dark inset — looks like a recessed slot in the board
     canvas.drawRRect(
       RRect.fromRectAndRadius(slotRect, const Radius.circular(7)),
-      Paint()..color = (isLiberal ? _kLibBgDark : _kFasBgDark)
-          .withValues(alpha: 0.55),
+      Paint()..color = const Color(0xFF0A0A0A).withValues(alpha: 0.45),
     );
 
-    // Stippled dot grid (physical board aesthetic)
-    final dotPaint = Paint()
-      ..color = accentColor.withValues(alpha: 0.18);
-    const dotR    = 1.8;
-    const dotStep = 9.0;
-    for (double dy = y + 10; dy < y + h - 6; dy += dotStep) {
-      for (double dx = x + 8; dx < x + w - 4; dx += dotStep) {
-        canvas.drawCircle(Offset(dx, dy), dotR, dotPaint);
-      }
-    }
-
-    // Dashed border (simulated with short line segments)
-    _drawDashedRRect(canvas, slotRect, 7, accentColor.withValues(alpha: 0.5), 1.5);
+    // Subtle solid border
+    _strokeRRect(canvas, slotRect, 7,
+        accentColor.withValues(alpha: 0.3), 1.2);
   }
 
   // ── Filled policy card — authentic LIBERAL/FASCIST ARTICLE card ──────────
@@ -881,22 +830,25 @@ class _SHBoardComponent extends PositionComponent {
       final isChancellor    = pid == _chancellorId;
       final isCandidate     = pid == _chancellorCandidateId;
 
-      // — Seat card background
+      // — Seat card background (semi-transparent glass over table texture)
+      final seatRect = Rect.fromLTWH(x, _kSeatsY, seatW, _kSeatsH);
       final cardColor = isDead
-          ? _kDead.withValues(alpha: 0.3)
+          ? _kDead.withValues(alpha: 0.25)
           : isPresident
-              ? _kWoodLight.withValues(alpha: 0.15)
+              ? _kWoodLight.withValues(alpha: 0.12)
               : isChancellor
-                  ? _kLibAccent.withValues(alpha: 0.12)
-                  : const Color(0xFF1E2A45).withValues(alpha: 0.7);
+                  ? _kLibAccent.withValues(alpha: 0.10)
+                  : const Color(0xFF0A0A0A).withValues(alpha: 0.45);
 
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, _kSeatsY, seatW, _kSeatsH),
-          const Radius.circular(8),
-        ),
+        RRect.fromRectAndRadius(seatRect, const Radius.circular(8)),
         Paint()..color = cardColor,
       );
+      // Subtle border
+      _strokeRRect(canvas, seatRect, 8,
+          (isPresident ? _kWoodLight : isChancellor ? _kLibAccent : _kTextLight)
+              .withValues(alpha: 0.15),
+          0.8);
 
       // — Wooden placard for President / Chancellor
       if (isPresident && !isDead) {
@@ -1206,10 +1158,10 @@ class _SHBoardComponent extends PositionComponent {
         _imgEmblemDove!,
         Rect.fromCenter(
           center: Offset(cx, cy),
-          width: size * 1.4,
-          height: size * 1.4,
+          width: size * 1.5,
+          height: size * 1.5,
         ),
-        opacity: 0.28,
+        opacity: 0.35,
       );
       return;
     }
@@ -1370,10 +1322,10 @@ class _SHBoardComponent extends PositionComponent {
         _imgEmblemSkull!,
         Rect.fromCenter(
           center: Offset(cx, cy),
-          width: size * 1.6,
-          height: size * 1.6,
+          width: size * 1.8,
+          height: size * 1.8,
         ),
-        opacity: 0.30,
+        opacity: 0.38,
       );
       return;
     }
