@@ -95,12 +95,14 @@ class _StartServerCommand extends _ServerCommand {
   final int port;
   final GameState initialState;
   final SendPort replyPort;
+  final String? webAssetRoot;
 
   _StartServerCommand({
     required this.host,
     required this.port,
     required this.initialState,
     required this.replyPort,
+    this.webAssetRoot,
   });
 }
 
@@ -159,6 +161,7 @@ class _IsolateConfig {
   });
 }
 
+
 void _serverIsolateEntry(_IsolateConfig config) {
   final receivePort = ReceivePort();
   config.commandPort.send(receivePort.sendPort);
@@ -176,6 +179,7 @@ void _serverIsolateEntry(_IsolateConfig config) {
         host: message.host,
         port: message.port,
         initialState: message.initialState,
+        webAssetRoot: message.webAssetRoot,
       );
       message.replyPort.send(_ServerStarted(server.port!));
     } else if (message is _StartGameCommand) {
@@ -342,6 +346,7 @@ class ServerIsolate {
     String host = '0.0.0.0',
     int port = 8080,
     Map<String, GamePackRules Function()> rulesFactoryMap = const {},
+    String? webAssetRoot,
   }) async {
     // Event port receives PlayerEvent messages from the server isolate.
     final eventReceivePort = ReceivePort();
@@ -367,6 +372,7 @@ class ServerIsolate {
         port: port,
         initialState: initialState,
         replyPort: replyPort.sendPort,
+        webAssetRoot: webAssetRoot,
       ),
     );
     final started = await replyPort.first as _ServerStarted;

@@ -7,6 +7,7 @@ import 'dart:isolate';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
+import 'package:shelf_static/shelf_static.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -176,6 +177,7 @@ class GameServer {
     String host = '0.0.0.0',
     int port = 8080,
     required GameState initialState,
+    String? webAssetRoot,
   }) async {
     _gameState = initialState;
     await gamePack.initialize(initialState);
@@ -183,8 +185,20 @@ class GameServer {
     final router = Router();
     router.get('/ws', webSocketHandler(_handleConnection));
 
+    final Handler rootHandler;
+    if (webAssetRoot != null) {
+      final staticHandler = createStaticHandler(
+        webAssetRoot,
+        defaultDocument: 'index.html',
+      );
+      // WebSocket route takes priority; unmatched paths fall through to static.
+      rootHandler = Cascade().add(router.call).add(staticHandler).handler;
+    } else {
+      rootHandler = router.call;
+    }
+
     _httpServer = await shelf_io.serve(
-      const Pipeline().addHandler(router.call),
+      const Pipeline().addHandler(rootHandler),
       host,
       port,
     );

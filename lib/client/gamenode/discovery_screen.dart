@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
@@ -65,12 +66,33 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   void _connectManual() {
-    // Strip brackets that may appear when pasting IPv6-style notation like [192.168.0.1]
-    final ip = _ipController.text.trim().replaceAll('[', '').replaceAll(']', '');
+    final raw = _ipController.text.trim().replaceAll('[', '').replaceAll(']', '');
+    if (raw.isEmpty) return;
+    // Accept full ws:// or http:// URLs pasted directly.
+    if (raw.startsWith('ws://') || raw.startsWith('wss://')) {
+      widget.onServerSelected?.call(raw);
+      return;
+    }
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      widget.onServerSelected?.call(_toWsUrl(raw));
+      return;
+    }
     final port = _portController.text.trim();
-    if (ip.isEmpty || port.isEmpty) return;
-    final url = 'ws://$ip:$port/ws';
-    widget.onServerSelected?.call(url);
+    if (port.isEmpty) return;
+    widget.onServerSelected?.call('ws://$raw:$port/ws');
+  }
+
+  /// Converts a browser-origin `http://host:port/` URL to `ws://host:port/ws`.
+  static String _toWsUrl(String httpUrl) {
+    final uri = Uri.parse(httpUrl);
+    final port = uri.hasPort ? uri.port : 80;
+    return 'ws://${uri.host}:$port/ws';
+  }
+
+  /// On web, derives the WebSocket URL from the page's own origin.
+  void _connectFromOrigin() {
+    final wsUrl = _toWsUrl(Uri.base.toString());
+    widget.onServerSelected?.call(wsUrl);
   }
 
   @override
@@ -80,6 +102,41 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── 웹: 이 서버로 자동 연결 ───────────────────
+          if (kIsWeb) ...[
+            PrimaryButton(
+              label: '이 서버로 자동 연결',
+              icon: Icons.bolt_rounded,
+              onPressed: _connectFromOrigin,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppTheme.outlineVariant.withValues(alpha: 0.2),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '또는 직접 입력',
+                    style: TextStyle(
+                        fontSize: 13, color: AppTheme.onSurfaceMuted),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppTheme.outlineVariant.withValues(alpha: 0.2),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+
           // ── 직접 입력 ──────────────────────────────────
           BoardCard(
             child: Column(
@@ -192,33 +249,36 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           const SizedBox(height: 20),
 
-          // ── QR 스캔 ────────────────────────────────────
-          _SecondaryButton(
-            icon: Icons.qr_code_scanner_rounded,
-            label: 'QR 코드 스캔',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => QrScanScreen(
-                    onScanned: (url) {
-                      Navigator.pop(context);
-                      widget.onServerSelected?.call(url);
-                    },
+          // ── QR 스캔 (네이티브만) ────────────────────────
+          if (!kIsWeb) ...[
+            _SecondaryButton(
+              icon: Icons.qr_code_scanner_rounded,
+              label: 'QR 코드 스캔',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => QrScanScreen(
+                      onScanned: (raw) {
+                        Navigator.pop(context);
+                        // Support new http:// QR payload and legacy ws:// format.
+                        widget.onServerSelected?.call(_toWsUrl(raw));
+                      },
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
 
-          // ── mDNS 자동 탐색 ─────────────────────────────
-          _SecondaryButton(
-            icon: Icons.wifi_find_rounded,
-            label: _scanning ? '탐색 중...' : '주변 서버 자동 탐색',
-            isLoading: _scanning,
-            onPressed: _scanning ? null : _scan,
-          ),
+            // ── mDNS 자동 탐색 (네이티브만) ───────────────
+            _SecondaryButton(
+              icon: Icons.wifi_find_rounded,
+              label: _scanning ? '탐색 중...' : '주변 서버 자동 탐색',
+              isLoading: _scanning,
+              onPressed: _scanning ? null : _scan,
+            ),
+          ],
 
           if (_error != null) ...[
             const SizedBox(height: 12),
