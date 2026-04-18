@@ -60,6 +60,14 @@ class WsClient {
   /// Maximum number of auto-reconnect attempts before giving up.
   final int maxReconnectAttempts;
 
+  /// Maximum time to wait for a connection attempt to become ready.
+  ///
+  /// On browsers the native WebSocket handshake can block for the full TCP
+  /// timeout (~60–75 s) when the server is unreachable, which makes the
+  /// reconnect loop appear stuck on attempt 1. The timeout bounds each
+  /// attempt so that failures surface quickly and the next retry fires.
+  final Duration connectTimeout;
+
   // ---------------------------------------------------------------------------
   // Internal state
   // ---------------------------------------------------------------------------
@@ -102,6 +110,7 @@ class WsClient {
     this.reconnectBaseDelay = const Duration(seconds: 2),
     // 0 means unlimited reconnect attempts.
     this.maxReconnectAttempts = 0,
+    this.connectTimeout = const Duration(seconds: 8),
   });
 
   bool get isConnected => _connected;
@@ -120,7 +129,17 @@ class WsClient {
   Future<void> connect() async {
     _intentionalDisconnect = false;
     _channel = WebSocketChannel.connect(uri);
-    await _channel!.ready;
+    try {
+      await _channel!.ready.timeout(connectTimeout);
+    } catch (e) {
+      // Close the half-open channel so browser sockets don't leak while the
+      // reconnect loop keeps trying.
+      try {
+        await _channel?.sink.close();
+      } catch (_) {}
+      _channel = null;
+      rethrow;
+    }
 
     _connected = true;
     _hasConnectedOnce = true;

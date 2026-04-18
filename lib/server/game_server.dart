@@ -27,6 +27,7 @@ import '../shared/messages/join_message.dart';
 import '../shared/messages/join_room_ack_message.dart';
 import '../shared/messages/ping_message.dart';
 import '../shared/messages/player_view_message.dart';
+import '../shared/messages/rename_player_message.dart';
 import '../shared/messages/set_ready_message.dart';
 import '../shared/messages/state_update_message.dart';
 import '../shared/messages/ws_message.dart';
@@ -411,6 +412,8 @@ class GameServer {
         _handleNodeMessage(NodeMessage.fromEnvelope(msg));
       case WsMessageType.forceEndVote:
         _handleForceEndVote(msg);
+      case WsMessageType.renamePlayer:
+        _handleRename(RenamePlayerMessage.fromEnvelope(msg), sink);
       default:
         _sendError(sink, 'Unexpected message type: ${msg.type}');
     }
@@ -450,6 +453,12 @@ class GameServer {
     if (isReconnect) {
       // Reattach the new socket to the existing seat.
       _sessions.reconnect(playerId: resolvedPlayerId, newSink: sink);
+      // The client may have changed their nickname while disconnected — honour
+      // the displayName carried on the fresh JOIN so reconnect doesn't clobber
+      // an updated name with the stale one stored on the seat.
+      if (join.displayName != null && join.displayName!.isNotEmpty) {
+        _sessions.rename(resolvedPlayerId, join.displayName!);
+      }
     } else {
       _sessions.register(
         playerId: resolvedPlayerId,
@@ -558,6 +567,38 @@ class GameServer {
   void _handleSetReady(SetReadyMessage msg) {
     _sessions.setReady(msg.playerId, msg.isReady);
     _broadcastLobbyState();
+  }
+
+  /// Applies an in-session nickname change requested by the player.
+  ///
+  /// The sender must own the [playerId] they are trying to rename (checked via
+  /// [_sinkToPlayer]) so one client can't rename another's seat. After the
+  /// name is updated the lobby snapshot is rebroadcast so every node sees the
+  /// fresh displayName — and, if a game is in progress, we refresh player/board
+  /// views so in-game UIs reflect it too.
+  void _handleRename(RenamePlayerMessage msg, SessionSink sink) {
+    final trimmed = msg.displayName.trim();
+    if (trimmed.isEmpty) return;
+
+    final ownerId = _sinkToPlayer[sink];
+    if (ownerId == null || ownerId != msg.playerId) {
+      _sendError(sink, 'Cannot rename another player');
+      return;
+    }
+
+    _sessions.rename(msg.playerId, trimmed);
+
+    eventPort?.send(PlayerEvent(
+      joined: true,
+      playerId: msg.playerId,
+      displayName: trimmed,
+    ));
+
+    _broadcastLobbyState();
+
+    if (_sessionState.phase == SessionPhase.inGame) {
+      _broadcastViews();
+    }
   }
 
   // ---------------------------------------------------------------------------

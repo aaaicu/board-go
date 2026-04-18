@@ -122,6 +122,16 @@ class SessionManager {
     );
   }
 
+  /// Updates the [displayName] for an existing session.
+  ///
+  /// No-op if [playerId] is unknown or if [displayName] is empty.
+  void rename(String playerId, String displayName) {
+    final session = _sessions[playerId];
+    if (session == null) return;
+    if (displayName.isEmpty) return;
+    _sessions[playerId] = session.copyWith(displayName: displayName);
+  }
+
   /// Re-attaches [newSink] to an existing (disconnected) seat identified by
   /// [playerId] and marks the player as connected again.
   ///

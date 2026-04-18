@@ -28,7 +28,9 @@ enum WsMessageType {
   // Force-end vote (platform feature)
   forceEndVoteStart,
   forceEndVote,
-  forceEndVoteResult;
+  forceEndVoteResult,
+  // In-session nickname change (Sprint 7 / web UX)
+  renamePlayer;
 
   String toJson() => switch (this) {
         WsMessageType.action => 'ACTION',
@@ -54,6 +56,7 @@ enum WsMessageType {
         WsMessageType.forceEndVoteStart => 'FORCE_END_VOTE_START',
         WsMessageType.forceEndVote => 'FORCE_END_VOTE',
         WsMessageType.forceEndVoteResult => 'FORCE_END_VOTE_RESULT',
+        WsMessageType.renamePlayer => 'RENAME_PLAYER',
       };
 
   static WsMessageType fromJson(String value) => switch (value) {
@@ -80,6 +83,7 @@ enum WsMessageType {
         'FORCE_END_VOTE_START' => WsMessageType.forceEndVoteStart,
         'FORCE_END_VOTE' => WsMessageType.forceEndVote,
         'FORCE_END_VOTE_RESULT' => WsMessageType.forceEndVoteResult,
+        'RENAME_PLAYER' => WsMessageType.renamePlayer,
         _ => throw FormatException('Unknown WsMessageType: $value'),
       };
 }
