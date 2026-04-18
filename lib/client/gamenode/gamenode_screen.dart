@@ -16,6 +16,7 @@ import '../../shared/messages/join_message.dart';
 import '../../shared/messages/join_room_ack_message.dart';
 import '../../shared/messages/lobby_state_message.dart';
 import '../../shared/messages/player_view_message.dart';
+import '../../shared/messages/rename_player_message.dart';
 import '../../shared/messages/set_ready_message.dart';
 import '../../shared/messages/state_update_message.dart';
 import '../../shared/messages/node_message.dart';
@@ -217,15 +218,27 @@ class _GameNodeScreenState extends State<GameNodeScreen>
           TextButton(
             onPressed: () async {
               final newNickname = controller.text.trim();
-              if (newNickname.isNotEmpty) {
+              if (newNickname.isNotEmpty && _identity != null) {
                 await PlayerIdentity.saveNickname(newNickname);
+                final updated = PlayerIdentity(
+                  deviceId: _identity!.deviceId,
+                  nickname: newNickname,
+                );
                 if (mounted) {
-                  setState(() {
-                    _identity = PlayerIdentity(
-                      deviceId: _identity!.deviceId,
-                      nickname: newNickname,
-                    );
-                  });
+                  setState(() => _identity = updated);
+                }
+                // If already connected to a server the local update alone
+                // won't reach the board — push a RENAME_PLAYER so every
+                // node's lobby/in-game view refreshes.
+                final client = _client;
+                final playerId = _assignedPlayerId ?? updated.deviceId;
+                if (client != null && client.isConnected) {
+                  client.sendMessage(
+                    RenamePlayerMessage(
+                      playerId: playerId,
+                      displayName: newNickname,
+                    ).toEnvelope(),
+                  );
                 }
               }
               if (context.mounted) Navigator.of(context).pop();

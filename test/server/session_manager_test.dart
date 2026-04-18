@@ -122,5 +122,29 @@ void main() {
     test('displayName returns null for unknown player', () {
       expect(manager.displayName('nobody'), isNull);
     });
+
+    test('rename updates displayName while keeping sink and connection', () {
+      final sink = _FakeSink();
+      manager.register(playerId: 'p1', displayName: 'Alice', sink: sink);
+
+      manager.rename('p1', 'Alicia');
+
+      expect(manager.displayName('p1'), equals('Alicia'));
+      expect(manager.isConnected('p1'), isTrue);
+
+      manager.send('p1', 'still-reachable');
+      expect(sink.sent, contains('still-reachable'));
+    });
+
+    test('rename is a no-op for unknown players and empty names', () {
+      final sink = _FakeSink();
+      manager.register(playerId: 'p1', displayName: 'Alice', sink: sink);
+
+      manager.rename('nobody', 'Ghost');
+      manager.rename('p1', '');
+
+      expect(manager.displayName('nobody'), isNull);
+      expect(manager.displayName('p1'), equals('Alice'));
+    });
   });
 }

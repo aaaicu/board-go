@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../server/mdns_registrar.dart';
 import '../../server/server_isolate.dart';
+import '../../server/web_asset_extractor.dart';
 import '../../shared/game_pack/game_pack_interface.dart';
 import '../../shared/game_pack/game_pack_registry.dart';
 import '../../shared/game_pack/game_state.dart';
@@ -45,17 +46,21 @@ class _NoOpGamePack implements GamePackInterface {
 /// instead of spinning up a real Isolate + network socket.
 typedef ServerStarter = Future<ServerHandle> Function();
 
-Future<ServerHandle> _defaultServerStarter() => ServerIsolate.start(
-      packFactory: _NoOpGamePack.new,
-      initialState: GameState(
-        gameId: 'game-${DateTime.now().millisecondsSinceEpoch}',
-        turn: 0,
-        activePlayerId: '',
-        data: {},
-      ),
-      port: 8080,
-      rulesFactoryMap: GamePackRegistry.instance.rulesFactoryMap,
-    );
+Future<ServerHandle> _defaultServerStarter() async {
+  final webAssetRoot = await WebAssetExtractor.extract();
+  return ServerIsolate.start(
+    packFactory: _NoOpGamePack.new,
+    initialState: GameState(
+      gameId: 'game-${DateTime.now().millisecondsSinceEpoch}',
+      turn: 0,
+      activePlayerId: '',
+      data: {},
+    ),
+    port: 8080,
+    rulesFactoryMap: GamePackRegistry.instance.rulesFactoryMap,
+    webAssetRoot: webAssetRoot,
+  );
+}
 
 /// IP override injected via `--dart-define=HOST_IP=192.168.x.x` at build time.
 /// Useful when running the server inside an Android emulator whose virtual
@@ -457,7 +462,9 @@ class _GameboardScreenState extends State<GameboardScreen> {
 
     final displayIp = _localIp ?? 'localhost';
     final connectionData = '$displayIp:${handle.port}';
-    final qrData = 'ws://$displayIp:${handle.port}/ws';
+    // http:// URL so phones can open the web GameNode in a browser directly.
+    // Native GameNode QR scanner converts http:// → ws:// automatically.
+    final qrData = 'http://$displayIp:${handle.port}/';
 
     return Column(
       children: [

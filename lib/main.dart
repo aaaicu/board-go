@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'src/desktop_db_init.dart' if (dart.library.html) 'src/desktop_db_init_web.dart';
 
 import 'client/gameboard/gameboard_screen.dart';
 import 'client/gamenode/gamenode_screen.dart';
@@ -11,11 +10,10 @@ import 'shared/game_pack/packs/simple_card_game_registration.dart';
 import 'shared/game_pack/packs/stockpile_registration.dart';
 import 'shared/game_pack/packs/secret_hitler_registration.dart';
 
+const _kRole = String.fromEnvironment('BOARD_GO_ROLE');
+
 void main() {
-  if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+  initDesktopDatabase();
 
   // Register game packs — one line per pack.
   GamePackRegistry.instance.register(simpleCardGameRegistration());
@@ -34,7 +32,9 @@ class BoardGoApp extends StatelessWidget {
       title: 'board-go',
       theme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
-      home: const RoleSelectScreen(),
+      home: _kRole == 'gamenode'
+          ? const GameNodeScreen()
+          : const RoleSelectScreen(),
     );
   }
 }
