@@ -115,6 +115,7 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
   int get _fascistPolicies => _data['fascistPolicies'] as int? ?? 0;
   bool get _vetoUnlocked => _data['vetoUnlocked'] as bool? ?? false;
   String? get _winner => _data['winner'] as String?;
+  String? get _winReason => _data['winReason'] as String?;
   List<String> get _deadPlayers =>
       List<String>.from(_data['deadPlayers'] ?? []);
   Map<String, dynamic> get _playerInfo =>
@@ -123,6 +124,21 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
   String _nick(String pid) {
     final info = _playerInfo[pid] as Map<String, dynamic>?;
     return info?['nickname'] as String? ?? pid;
+  }
+
+  String? _winReasonText(String? reason) {
+    switch (reason) {
+      case 'LIBERAL_POLICIES':
+        return '자유주의 정책 5장 제정';
+      case 'FASCIST_POLICIES':
+        return '파시스트 정책 6장 제정';
+      case 'HITLER_CHANCELLOR':
+        return '히틀러가 총리로 선출됨';
+      case 'HITLER_EXECUTED':
+        return '히틀러가 처형됨';
+      default:
+        return null;
+    }
   }
 
   // ── Message generation ────────────────────────────────────────────────────
@@ -2009,6 +2025,18 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
             letterSpacing: 2,
           ),
         ),
+        if (_winReasonText(_winReason) != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _winReasonText(_winReason)!,
+            style: const TextStyle(
+              color: _kTextLight,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
         const SizedBox(height: 6),
         Text(
           myTeamWon ? '축하합니다! 당신의 팀이 이겼습니다!' : '아쉽게도 패배했습니다.',

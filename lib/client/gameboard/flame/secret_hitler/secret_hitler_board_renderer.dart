@@ -166,6 +166,7 @@ class _SHBoardComponent extends PositionComponent {
   String? _chancellorId;
   String? _chancellorCandidateId;
   String? _winner;
+  String? _winReason;
   int  _deckCount    = 0;
   int  _discardCount = 0;
   List<String>            _playerOrder    = [];
@@ -226,6 +227,7 @@ class _SHBoardComponent extends PositionComponent {
     _chancellorId     = data['chancellorId']     as String?;
     _chancellorCandidateId = data['chancellorCandidateId'] as String?;
     _winner           = data['winner']           as String?;
+    _winReason        = data['winReason']        as String?;
     _deckCount        = data['deckCount']        as int? ?? 0;
     _discardCount     = data['discardCount']     as int? ?? 0;
     _playerOrder      = List<String>.from(data['playerOrder'] as List? ?? []);
@@ -975,7 +977,8 @@ class _SHBoardComponent extends PositionComponent {
     if (_completedVotes.isEmpty || _voteResult == null) return;
     if (_phase != 'VOTING' &&
         _phase != 'LEGISLATIVE_PRESIDENT' &&
-        _phase != 'LEGISLATIVE_CHANCELLOR') {
+        _phase != 'LEGISLATIVE_CHANCELLOR' &&
+        _phase != 'CHANCELLOR_NOMINATION') {
       return;
     }
 
@@ -1004,6 +1007,7 @@ class _SHBoardComponent extends PositionComponent {
     final isLiberal  = _winner == 'LIBERAL';
     final color      = isLiberal ? _kLibAccent : _kFasAccent;
     final teamLabel  = isLiberal ? '자유주의 승리!' : '파시스트 승리!';
+    final reasonText = _winReasonText(_winReason);
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
@@ -1020,7 +1024,37 @@ class _SHBoardComponent extends PositionComponent {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas, Offset((size.x - tp.width) / 2, (size.y - tp.height) / 2));
+    final teamY = (size.y - tp.height) / 2 - (reasonText == null ? 0 : 24);
+    tp.paint(canvas, Offset((size.x - tp.width) / 2, teamY));
+
+    if (reasonText != null) {
+      final rp = TextPainter(
+        text: TextSpan(
+          text: reasonText,
+          style: const TextStyle(
+            color: _kCream, fontSize: 18,
+            fontWeight: FontWeight.w600, letterSpacing: 1),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.x - 40);
+      rp.paint(canvas,
+          Offset((size.x - rp.width) / 2, teamY + tp.height + 16));
+    }
+  }
+
+  String? _winReasonText(String? reason) {
+    switch (reason) {
+      case 'LIBERAL_POLICIES':
+        return '자유주의 정책 5장 제정';
+      case 'FASCIST_POLICIES':
+        return '파시스트 정책 6장 제정';
+      case 'HITLER_CHANCELLOR':
+        return '히틀러가 총리로 선출됨';
+      case 'HITLER_EXECUTED':
+        return '히틀러가 처형됨';
+      default:
+        return null;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

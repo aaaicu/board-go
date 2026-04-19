@@ -97,6 +97,7 @@ class SecretHitlerRules implements GamePackRules {
       'investigatedPlayers': <String>[],
       'specialElectionReturnIndex': null,
       'winner': null,
+      'winReason': null,
       'lastEnactedPolicy': null,
     };
 
@@ -352,6 +353,7 @@ class SecretHitlerRules implements GamePackRules {
           int fascistPolicies = data['fascistPolicies'] as int;
           if (fascistPolicies >= 3 && chancellorRole == 'HITLER') {
             data['winner'] = 'FASCIST';
+            data['winReason'] = 'HITLER_CHANCELLOR';
             addLog('히틀러가 수상으로 선출되었습니다! 파시스트 승리!');
           } else {
             var deck = List<String>.from(data['deck']);
@@ -442,6 +444,7 @@ class SecretHitlerRules implements GamePackRules {
 
         if (fascists >= 6) {
           data['winner'] = 'FASCIST';
+          data['winReason'] = 'FASCIST_POLICIES';
           addLog('파시스트 정책이 6장 제정되었습니다. 파시스트 승리!');
         } else {
           final playerCount = state.playerOrder.length;
@@ -506,6 +509,7 @@ class SecretHitlerRules implements GamePackRules {
       final role = roles[target];
       if (role == 'HITLER') {
         data['winner'] = 'LIBERAL';
+        data['winReason'] = 'HITLER_EXECUTED';
         addLog('히틀러가 사망했습니다! 자유주의 승리!');
       } else {
         _nextPresident(state, data);
@@ -550,6 +554,7 @@ class SecretHitlerRules implements GamePackRules {
       Map<String, dynamic> data, Function(String) addLog) {
     if ((data['liberalPolicies'] as int) == 5) {
       data['winner'] = 'LIBERAL';
+      data['winReason'] = 'LIBERAL_POLICIES';
       addLog('자유주의 정책이 5장 제정되었습니다! 자유주의 승리!');
     } else {
       _nextPresident(state, data);
@@ -576,7 +581,12 @@ class SecretHitlerRules implements GamePackRules {
     data['presidentId'] = state.playerOrder[pos];
     data['chancellorId'] = null;
     data['chancellorCandidateId'] = null;
-    data['voteResult'] = null;
+    // Intentionally keep voteResult here. When a vote fails the phase moves
+    // straight to CHANCELLOR_NOMINATION, so clearing voteResult in the same
+    // processAction would wipe the 'FAILED' banner before any client ever
+    // saw it. It is cleared on the next NOMINATE action (see line above
+    // handling 'NOMINATE'), which gives clients a full state-broadcast
+    // window to render the 가결/부결 banner.
   }
 
   @override
@@ -672,6 +682,7 @@ class SecretHitlerRules implements GamePackRules {
     privateInfo['electionTracker'] = data['electionTracker'];
     privateInfo['vetoUnlocked'] = data['vetoUnlocked'];
     privateInfo['winner'] = data['winner'];
+    privateInfo['winReason'] = data['winReason'];
     privateInfo['lastEnactedPolicy'] = data['lastEnactedPolicy'];
     privateInfo['deadPlayers'] =
         List<String>.from(data['deadPlayers'] ?? []);
