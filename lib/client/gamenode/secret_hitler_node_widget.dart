@@ -759,58 +759,116 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
     );
   }
 
-  /// Renders the physical-card-style party/role card using Canvas.
+  /// Role/party card overlay — image background with text overlay.
   Widget _buildCanvasCard({required bool isLiberal, required bool isRole}) {
+    const base = 'assets/gamepacks/secret_hitler/images/';
+    String bgAsset;
+    String emblemAsset;
     String title;
     String subtitle;
-    Color bgColor;
     Color accentColor;
 
     if (isRole) {
       switch (_myRole) {
         case 'LIBERAL':
+          bgAsset = '${base}card_party_liberal.jpg';
+          emblemAsset = '${base}emblem_dove.jpg';
           title = '리버럴';
           subtitle = '역할 카드';
-          bgColor = _kLiberalDeep;
           accentColor = _kLiberalLight;
         case 'FASCIST':
+          bgAsset = '${base}card_party_fascist.jpg';
+          emblemAsset = '${base}emblem_skull.jpg';
           title = '파시스트';
           subtitle = '역할 카드';
-          bgColor = _kFascistDeep;
           accentColor = _kFascistLight;
         case 'HITLER':
+          bgAsset = '${base}card_role_hitler.jpg';
+          emblemAsset = '${base}emblem_hitler.jpg';
           title = '히틀러';
           subtitle = '역할 카드';
-          bgColor = const Color(0xFF1A0000);
           accentColor = _kFascistLight;
         default:
+          bgAsset = '${base}card_back.jpg';
+          emblemAsset = '';
           title = '???';
           subtitle = '역할 카드';
-          bgColor = _kCardBg;
           accentColor = _kTextMuted;
       }
     } else {
-      // Party card
+      bgAsset = isLiberal
+          ? '${base}card_party_liberal.jpg'
+          : '${base}card_party_fascist.jpg';
+      emblemAsset = isLiberal
+          ? '${base}emblem_dove.jpg'
+          : '${base}emblem_skull.jpg';
       title = isLiberal ? '리버럴' : '파시스트';
       subtitle = '정당 카드';
-      bgColor = isLiberal ? _kLiberalDeep : _kFascistDeep;
       accentColor = isLiberal ? _kLiberalLight : _kFascistLight;
     }
 
-    // Card proportions: 2:3 ratio
     const double cardWidth = 200;
     const double cardHeight = 300;
 
-    return SizedBox(
-      width: cardWidth,
-      height: cardHeight,
-      child: CustomPaint(
-        painter: _CardPainter(
-          bgColor: bgColor,
-          accentColor: accentColor,
-          title: title,
-          subtitle: subtitle,
-          isLiberal: isRole ? _myRole == 'LIBERAL' : isLiberal,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        width: cardWidth,
+        height: cardHeight,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(bgAsset, fit: BoxFit.cover),
+            if (emblemAsset.isNotEmpty)
+              Positioned(
+                top: 36,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: SizedBox(
+                    width: 80,
+                    height: 80,
+                    child: Image.asset(emblemAsset, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 72,
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  shadows: const [
+                    Shadow(color: Color(0xCC000000), blurRadius: 6),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 52,
+              child: Text(
+                subtitle,
+                style: TextStyle(
+                  color: accentColor.withValues(alpha: 0.75),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 2,
+                  shadows: const [
+                    Shadow(color: Color(0xCC000000), blurRadius: 4),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1575,92 +1633,80 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
   }) {
     final isLiberal = policy == 'LIBERAL';
     final color = isLiberal ? _kLiberalBlue : _kFascistRed;
-    const cream = Color(0xFFF5E6C8);
-    const creamDark = Color(0xFFE8D5B0);
+    const base = 'assets/gamepacks/secret_hitler/images/';
+    final bgAsset =
+        isLiberal ? '${base}card_liberal_bg.jpg' : '${base}card_fascist_bg.jpg';
+    final emblemAsset =
+        isLiberal ? '${base}emblem_dove.jpg' : '${base}emblem_skull.jpg';
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
-        child: Container(
-          width: 105,
-          height: 155,
-          decoration: BoxDecoration(
-            color: cream,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: creamDark, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Container(
-            margin: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: color, width: 2.5),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 105,
+            height: 155,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                const SizedBox(height: 6),
-                Icon(
-                  isLiberal ? Icons.flutter_dash : Icons.dangerous,
-                  color: color,
-                  size: 32,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  isLiberal ? 'LIBERAL' : 'FASC1ST',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                Text(
-                  'ARTICLE',
-                  style: TextStyle(
-                    color: color.withValues(alpha: 0.7),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ...List.generate(
-                  3,
-                  (i) => Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 2),
-                    child: Container(
-                        height: 1,
-                        color: color.withValues(alpha: 0.2)),
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                Image.asset(bgAsset, fit: BoxFit.cover),
+                // Emblem
+                Positioned(
+                  top: 12,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: SizedBox(
+                      width: 46,
+                      height: 46,
+                      child: Image.asset(emblemAsset, fit: BoxFit.contain),
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
+                // Policy type label
+                Positioned(
+                  left: 4,
+                  right: 4,
+                  top: 65,
+                  child: Text(
+                    isLiberal ? 'LIBERAL' : 'FASC1ST',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                      shadows: [
+                        Shadow(color: Color(0xCC000000), blurRadius: 4),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                // Action button
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1880,72 +1926,50 @@ class _SecretHitlerNodeWidgetState extends State<SecretHitlerNodeWidget> {
     );
   }
 
-  /// Policy card for the peek screen — same design as [_buildPolicyCard] but
-  /// non-interactive (display-only).
+  /// Policy card for the peek screen — image background, display-only.
   Widget _buildPeekPolicyCard({required String policy}) {
     final isLiberal = policy == 'LIBERAL';
-    final color = isLiberal ? _kLiberalBlue : _kFascistRed;
-    const cream = Color(0xFFF5E6C8);
-    const creamDark = Color(0xFFE8D5B0);
+    const base = 'assets/gamepacks/secret_hitler/images/';
+    final bgAsset =
+        isLiberal ? '${base}card_liberal_bg.jpg' : '${base}card_fascist_bg.jpg';
+    final emblemAsset =
+        isLiberal ? '${base}emblem_dove.jpg' : '${base}emblem_skull.jpg';
 
-    return Container(
-      width: 105,
-      height: 155,
-      decoration: BoxDecoration(
-        color: cream,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: creamDark, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.25),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Container(
-        margin: const EdgeInsets.all(5),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color, width: 2.5),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 105,
+        height: 155,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            const SizedBox(height: 6),
-            Icon(
-              isLiberal ? Icons.flutter_dash : Icons.dangerous,
-              color: color,
-              size: 32,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              isLiberal ? 'LIBERAL' : 'FASC1ST',
-              style: TextStyle(
-                color: color,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
+            Image.asset(bgAsset, fit: BoxFit.cover),
+            Positioned(
+              top: 12,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Image.asset(emblemAsset, fit: BoxFit.contain),
+                ),
               ),
             ),
-            Text(
-              'ARTICLE',
-              style: TextStyle(
-                color: color.withValues(alpha: 0.7),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 6),
-            ...List.generate(
-              3,
-              (i) => Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 2),
-                child: Container(
-                    height: 1,
-                    color: color.withValues(alpha: 0.2)),
+            Positioned(
+              left: 4,
+              right: 4,
+              top: 65,
+              child: Text(
+                isLiberal ? 'LIBERAL' : 'FASC1ST',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  shadows: [Shadow(color: Color(0xCC000000), blurRadius: 4)],
+                ),
+                textAlign: TextAlign.center,
               ),
             ),
           ],
