@@ -58,6 +58,7 @@ flutter:
     - assets/web_node/
     - assets/web_node/assets/
     - assets/web_node/assets/assets/gamepacks/secret_hitler/
+    - assets/web_node/assets/assets/gamepacks/secret_hitler/images/
     - assets/web_node/assets/assets/gamepacks/simple_card_battle/
     - assets/web_node/assets/assets/gamepacks/stockpile/
     - assets/web_node/assets/assets/gamepacks/stockpile/image/
